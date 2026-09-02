@@ -51,6 +51,9 @@
 #include "always.h"
 
 #include "bullet.h"
+#include "syncrechook.h"
+
+#include <intrin.h>
 
 #include "_convert.h"
 #include "_map.h"
@@ -1589,6 +1592,7 @@ HRESULT STDMETHODCALLTYPE BulletClass::GetClassID(CLSID * retval)
 /// </summary>
 void BulletClass::Assign_Target(AbstractClass * target)
 {
+	Sync_Record_Target(*this, target, (unsigned)(uintptr_t)_ReturnAddress());
 	TarCom = target;
 }
 

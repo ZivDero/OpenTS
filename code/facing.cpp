@@ -37,6 +37,9 @@
 #include "always.h"
 
 #include "facing.h"
+#include "syncrechook.h"
+
+#include <intrin.h>
 
 #include <algorithm>
 
@@ -125,6 +128,7 @@ bool FacingClass::Set(DirType const & facing)
 		DesiredFacing = facing;
 		StartFacing = facing;
 		RotationTimer = 0;
+		Sync_Record_Facing(facing, (unsigned)(uintptr_t)_ReturnAddress());
 		return(true);
 	}
 

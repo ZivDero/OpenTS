@@ -131,6 +131,9 @@
 #include "always.h"
 
 #include "techno.h"
+#include "syncrechook.h"
+
+#include <intrin.h>
 
 #include "_bench.h"
 #include "_convert.h"
@@ -3641,6 +3644,9 @@ void TechnoClass::Assign_Target(AbstractClass * target)
 	/*
 	**	Set the unit's targeting computer.
 	*/
+	if (Fetch_RTTI() != RTTI_BUILDING) {
+		Sync_Record_Target(*this, target, (unsigned)(uintptr_t)_ReturnAddress());
+	}
 	TarCom = target;
 
 	if (target != NULL) {

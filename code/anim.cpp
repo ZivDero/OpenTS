@@ -54,6 +54,9 @@
 #include "always.h"
 
 #include "anim.h"
+#include "syncrechook.h"
+
+#include <intrin.h>
 
 #include "_bench.h"
 #include "_convert.h"
@@ -150,6 +153,7 @@ AnimClass::AnimClass(AnimTypeClass const * type, Coord const & coord, int timede
 	ShapeFlags(flags)
 {
 	Create_ID();
+	Sync_Record_Anim(*this, coord, (unsigned)(uintptr_t)_ReturnAddress());
 	Anims.Add(this);
 	IsActive = true;
 

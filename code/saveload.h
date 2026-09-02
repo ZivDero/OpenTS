@@ -16,6 +16,8 @@
 struct IStream;
 class SaveVersionInfo;
 
+#include <cstdio>
+
 /*
 **	SAVELOAD.CPP
 */
@@ -27,6 +29,7 @@ bool Reconcile_Players(void);
 bool Request_Save_Game(char const * file_name, char const * descr);
 void Process_Pending_Save_Game(void);
 void Reset_Multiplayer_Save_State(void);
+void Print_Heap_CRCs(FILE * fp);
 void Disable_Multiplayer_Saving(void);
 bool Is_Multiplayer_Saving_Allowed(void);
 

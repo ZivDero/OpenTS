@@ -46,6 +46,9 @@
 #include "always.h"
 
 #include "mission.h"
+#include "syncrechook.h"
+
+#include <intrin.h>
 
 #include "_bench.h"
 #include "_mission.h"
@@ -347,6 +350,7 @@ void MissionClass::Assign_Mission(MissionType order)
 	if (order == MISSION_QMOVE) order = MISSION_MOVE;
 
 	if (order != MISSION_NONE && (CurrentMission != order || MissionQueue != order && MissionQueue != MISSION_NONE)) {
+		Sync_Record_Mission(*this, CurrentMission, order, SYNC_MISSION_ASSIGN, (unsigned)(uintptr_t)_ReturnAddress());
 		MissionQueue = order;
 		IsMissionUnloadStandby = false;
 	}
@@ -373,6 +377,8 @@ void MissionClass::Assign_Mission(MissionType order)
 void MissionClass::Override_Mission(MissionType mission, AbstractClass *, AbstractClass *)
 {
 	if (CurrentMission == MISSION_DECONSTRUCTION) return;
+
+	Sync_Record_Mission(*this, CurrentMission, mission, SYNC_MISSION_OVERRIDE, (unsigned)(uintptr_t)_ReturnAddress());
 
 	if (MissionQueue != MISSION_NONE) {
 		SuspendedMission = MissionQueue;
