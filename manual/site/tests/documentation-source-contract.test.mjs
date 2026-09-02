@@ -249,29 +249,61 @@ test('House assignment takes each seat as written before the neutral houses exis
 test('A chosen start position keeps its number and is claimed before the game picks', () => {
 	const scenario = source('code/scenario.cpp');
 
-	const build = functionBody(
-		scenario,
-		'static DynamicVectorClass<Cell> Build_Start_Waypoint_List(bool official, bool keep_identity, int wanted)',
+	const assign = functionBody(
+		scenario.slice(scenario.search(/static void Assign_Start_Positions\(bool official\)\s*\{/)),
+		'static void Assign_Start_Positions(bool official)',
 	);
-	assertOrdered(build, [
-		'if (keep_identity) {',
-		'waypts.Add(declared ? Scen->Get_Waypoint_Cell(waycount) : CELL_NONE);',
-		'Append_Open_Start_Positions(',
-		'return(waypts);',
-	], 'the numbered list keeps an undeclared position as a hole and appends any shortfall past it');
-
-	const create = functionBody(
-		scenario.slice(scenario.search(/static void Create_Units\(bool official\)\s*\{/)),
-		'static void Create_Units(bool official)',
-	);
-	assertOrdered(create, [
-		'housep->SpawnWaypoint >= 0',
-		'Build_Start_Waypoint_List(official, choices, wanted)',
-		'taken[index] = choices && index < waypts.Count() && waypts[index] == CELL_NONE;',
-		'reserved[spot] = index;',
-		'reserved[hptr->SpawnWaypoint] == (int)house',
-		'} else if (numtaken == 0) {',
+	assertOrdered(assign, [
+		'housep->SpawnWaypoint = -1;',
+		'if (official && !choices) {',
+		'open[spot] = spot < look_for && Scen->Is_Valid_Waypoint(spot);',
+		'if (spot < MAX_PLAYERS && open[spot]) {',
+		'held[spot] = true;',
+		'housep->SpawnWaypoint >= 0) {',
+		'best = candidates[Random_Pick(0, count - 1)];',
+		'housep->SpawnWaypoint = best;',
 	], 'every named position is held before the game picks for anybody who named none');
+
+	const read = functionBody(
+		scenario.slice(scenario.search(/bool Read_Scenario_INI\(CCINIClass const & ini, bool is_mapgen\)\s*\{/)),
+		'bool Read_Scenario_INI(CCINIClass const & ini, bool is_mapgen)',
+	);
+	assertOrdered(read, [
+		'Scen->Read_Waypoints(ini);',
+		'Assign_Start_Positions(official);',
+		'Read_Spawn_Houses(ini);',
+		'TeamTypeClass::Read_All(AIINI, SCOPE_GLOBAL);',
+	], 'positions are settled and the spawn house sections read before any team, trigger or object');
+});
+
+test('A house following a map plan builds under the campaign rules', () => {
+	const house = source('code/house.cpp');
+
+	assert.match(
+		functionBody(house, 'bool HouseClass::Can_Build_Here(BuildingTypeClass *building, Cell const & cell)'),
+		/if \(Scen->Is_Campaign_Base_AI\(\)\) \{\s*return\(true\);/,
+		'the compactness test passes for a house following a map plan',
+	);
+	assert.match(
+		functionBody(house, 'int HouseClass::AI_Building(void)'),
+		/if \(!Scen->Is_Campaign_Base_AI\(\) && b->Drain \+ Drain > Power - PowerSurplus/,
+		'a power plant is inserted only for a house not following a map plan',
+	);
+	assert.match(
+		functionBody(house, 'int HouseClass::Expert_AI(void)'),
+		/if \(!Scen->Is_Campaign_Base_AI\(\)\) \{/,
+		'money and fire-sale interventions run only for a house not following a map plan',
+	);
+	assert.match(
+		functionBody(house, 'void HouseClass::Invalidate_Base_Node_Position(BuildingClass * building)'),
+		/building->Class->IsBaseDefense && !Scen->Is_Campaign_Base_AI\(\)/,
+		'a base defense node is retired only for a house not following a map plan',
+	);
+	assert.match(
+		functionBody(source('code/scenario.cpp'), 'bool ScenarioClass::Is_Campaign_Base_AI(void) const'),
+		/Session\.Type == GAME_NORMAL \|\| IsMPAIBaseNodes/,
+		'the campaign rules apply in a campaign or when the map asks for them',
+	);
 });
 
 test('Starting units are placed from three to thirty-two cells out and are no longer scattered', () => {
