@@ -58,6 +58,7 @@
 #include "dbgprint.h"
 #include "gamedirs.h"		// for Search_Files.
 #include "globals.h"
+#include "houseat.h"
 #include "ipxmgr.h"
 #include "language\language.h"
 #include "msgloop.h"
@@ -494,7 +495,11 @@ void SessionClass::Read_MultiPlayer_Settings(void)
 	PrefColor = ConfigINI.Get_Int("MultiPlayer", "Color", 0);
 
 	if (!Session.IsWDT) {
+		int previous = House;
 		House = (int)ConfigINI.Get_HousesType("MultiPlayer", "Side", (HousesType)House);
+		if (Is_House_At((HousesType)House)) {
+			House = previous;
+		}
 	}
 
 	TrapCheckHeap = ConfigINI.Get_Int("MultiPlayer", "CheckHeap", 0);

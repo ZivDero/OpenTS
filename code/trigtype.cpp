@@ -323,6 +323,10 @@ void TriggerTypeClass::Detach(AbstractClass const * target, bool all)
 {
 	BASECLASS::Detach(target, all);
 
+	if (House == target) {
+		House = NULL;
+	}
+
 	if (LinkedTo != NULL && LinkedTo == target) {
 		LinkedTo = LinkedTo->LinkedTo;
 	}
@@ -497,9 +501,8 @@ bool TriggerTypeClass::Read_INI(CCINIClass const & ini)
 
 	if (ini.Get_String(INI_NAME, IniName, "", buffer, sizeof(buffer))) {
 		char * token = strtok(buffer, ",");
-		HousesType house = stricmp(token, "<none>") == 0 ? HOUSE_FIRST : HouseTypeClass::From_Name(token);
-		if (house == HOUSE_NONE || House_From_HousesType(house) == NULL) return(false);
-		House = HouseTypes[house];
+		House = stricmp(token, "<none>") == 0 ? House_From_HousesType(HOUSE_FIRST) : House_From_Owner_Name(token);
+		if (House == NULL) return(false);
 		token = strtok(NULL, ",");
 		LinkedTo = NULL;
 		if (stricmp(token, "<none>") != 0) {
@@ -621,7 +624,7 @@ bool TriggerTypeClass::Write_INI(CCINIClass & ini) const
 	char buffer[INIClass::MAX_LINE_LENGTH];
 
 	sprintf(buffer, "%s,%s,%s,%d,%d,%d,%d,%d",
-		(House != NULL) ? (char const *)House->IniName : "<none>",
+		(House != NULL) ? (char const *)House->Class->IniName : "<none>",
 		(LinkedTo != NULL) ? (char const *)LinkedTo->IniName : "<none>",
 		(char const *)GivenName,
 		IsEnabled ? 0 : 1,
@@ -797,7 +800,7 @@ void TriggerTypeClass::Compute_CRC(CRCEngine & crc) const
 {
 	BASECLASS::Compute_CRC(crc);
 
-	crc(House->Fetch_ID());
+	if (House != NULL) crc(House->Fetch_ID());
 	if (LinkedTo != NULL) crc(LinkedTo->Fetch_ID());
 	if (FirstEvent != NULL) crc(FirstEvent->Fetch_ID());
 	if (FirstAction != NULL) crc(FirstAction->Fetch_ID());

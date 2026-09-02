@@ -153,6 +153,7 @@
 #include "factory.h"
 #include "globals.h"
 #include "goptions.h"
+#include "houseat.h"
 #include "houstype.h"
 #include "incdec.h"
 #include "infantry.h"
@@ -2910,7 +2911,7 @@ void HouseClass::Clobber_All(void)
 		}
 	}
 	for (i = 0; i < Triggers.Count(); i++) {
-		if (Triggers[i]->Class->House == Class) {
+		if (Triggers[i]->Class->House == this) {
 			delete Triggers[i];
 			i--;
 		}
@@ -5477,9 +5478,12 @@ void HouseClass::Read_All(CCINIClass const & ini)
 
 	for (index = HOUSE_FIRST; index < count; index++) {
 		/// Reading the entry is what forces the house type to be created. The house below is
-		/// built from the type at the same index, which need not be the one just read.
+		/// built from the type at the same index, which need not be the one just read, and a
+		/// spawn house entry registers no type at all.
 		ini.Get_HousesType("Houses", ini.Get_Entry("Houses", index), HOUSE_NONE);
-		new HouseClass(HouseTypes[index]);
+		if (index < HouseTypes.Count()) {
+			new HouseClass(HouseTypes[index]);
+		}
 	}
 
 	for (index = HOUSE_FIRST; index < Houses.Count(); index++) {
@@ -6281,6 +6285,10 @@ void HouseClass::Tracking_Active_Add(TechnoClass * techno, bool bycapture)
  *=============================================================================================*/
 HouseClass * House_From_HousesType(HousesType house)
 {
+	if (Is_House_At(house)) {
+		return(House_At(House_At_Slot(house)));
+	}
+
 	for (int index = 0; index < Houses.Count(); index++) {
 		HouseClass * housep = Houses[index];
 		if (housep->Class->House == house) {
@@ -6288,6 +6296,62 @@ HouseClass * House_From_HousesType(HousesType house)
 		}
 	}
 	return(NULL);
+}
+
+
+/// <summary>
+/// Fetches the house starting at a numbered start position.
+/// </summary>
+/// <returns>The house holding that position, or NULL while nobody does. An observer or a
+/// passive house never holds one.</returns>
+HouseClass * House_At(int slot)
+{
+	if (slot < 0) {
+		return(NULL);
+	}
+
+	for (int index = 0; index < Houses.Count(); index++) {
+		HouseClass * housep = Houses[index];
+		if (housep->SpawnWaypoint == slot && !housep->IsObserver && !housep->Class->IsMultiplayPassive) {
+			return(housep);
+		}
+	}
+	return(NULL);
+}
+
+
+/// <summary>
+/// Fetches the live house a scenario names as an owner: a country somebody is playing, or
+/// whoever starts at the position a house-at name refers to.
+/// </summary>
+/// <returns>The house, or NULL when nobody in the session answers to the name.</returns>
+HouseClass * House_From_Owner_Name(char const * name)
+{
+	int slot = House_At_Slot_From_Name(name);
+	if (slot != -1) {
+		HouseClass * housep = House_At(slot);
+		if (housep == NULL) {
+			DebugString("Nobody starts at waypoint %d; dropping what %s owns\n", slot, name);
+		}
+		return(housep);
+	}
+	return(House_From_HousesType(HouseTypeClass::From_Name(name)));
+}
+
+
+/// <summary>
+/// Does a house parameter name this house? A house-at reference names the one house at that
+/// position, while a country names every house playing it.
+/// </summary>
+bool House_Is_Named(HouseClass const * house, HousesType name)
+{
+	if (house == NULL) {
+		return(false);
+	}
+	if (Is_House_At(name)) {
+		return(House_At(House_At_Slot(name)) == house);
+	}
+	return(house->Class->House == name);
 }
 
 

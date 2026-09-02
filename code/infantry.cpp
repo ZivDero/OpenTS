@@ -3136,7 +3136,6 @@ ObjectTypeClass const * InfantryClass::Class_Of(void) const
 void InfantryClass::Read_INI(CCINIClass const & ini)
 {
 	InfantryClass	* infantry;			// Working infantry pointer.
-	HousesType		inhouse;			// Infantry house.
 	InfantryType	classid;			// Infantry class.
 	char			buf[128];
 	char			* validation;
@@ -3155,12 +3154,8 @@ void InfantryClass::Read_INI(CCINIClass const & ini)
 		/*
 		**	1st token: house name.
 		*/
-		inhouse = HouseTypeClass::From_Name(strtok(buf, ","));
-		if (inhouse != HOUSE_NONE) {
-			HouseClass * inhousep = House_From_HousesType(inhouse);
-			if (inhousep == NULL) {
-				continue;
-			}
+		HouseClass * inhousep = House_From_Owner_Name(strtok(buf, ","));
+		if (inhousep != NULL) {
 
 			/*
 			**	2nd token: infantry type name.

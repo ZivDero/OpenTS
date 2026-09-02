@@ -1123,3 +1123,6 @@ class HouseClass : public AbstractClass
 };
 
 HouseClass * House_From_HousesType(HousesType house);
+HouseClass * House_At(int slot);
+HouseClass * House_From_Owner_Name(char const * name);
+bool House_Is_Named(HouseClass const * house, HousesType name);

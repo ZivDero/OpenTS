@@ -88,6 +88,7 @@
 #include "conquer.h"
 #include "coord.h"
 #include "globals.h"
+#include "houseat.h"
 #include "houstype.h"
 #include "incdec.h"
 #include "infatype.h"
@@ -1203,6 +1204,10 @@ HousesType CCINIClass::Get_HousesType(char const * section, char const * entry, 
 	char buffer[128];
 
 	if (Get_String(section, entry, "", buffer, sizeof(buffer))) {
+		int slot = House_At_Slot_From_Name(buffer);
+		if (slot != -1) {
+			return(House_At_Index(slot));
+		}
 		HousesType house = HouseTypeClass::From_Name(buffer);
 		if (house == HOUSE_NONE) {
 			HouseTypeClass * type = new HouseTypeClass(buffer);
@@ -1235,7 +1240,9 @@ HousesType CCINIClass::Get_HousesType(char const * section, char const * entry, 
 bool CCINIClass::Put_HousesType(char const * section, char const * entry, HousesType value)
 {
 	char const * name = "<none>";
-	if (value != HOUSE_NONE) {
+	if (Is_House_At(value)) {
+		name = House_At_Name(House_At_Slot(value));
+	} else if (value != HOUSE_NONE) {
 		name = HouseTypes[value]->Name();
 	}
 
