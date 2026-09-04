@@ -158,6 +158,15 @@ class TActionClass : public AbstractClass
 
 		Coord Waypoint_As_Coord(void);
 
+		/*
+		 * The scenario format stores the rectangle for every action, so the actions added after
+		 * the original set read its four fields as their second to fifth parameters.
+		 */
+		int Second_Parameter(void) const {return(TriggerRect.X);}
+		int Third_Parameter(void) const {return(TriggerRect.Y);}
+		int Fourth_Parameter(void) const {return(TriggerRect.Width);}
+		int Fifth_Parameter(void) const {return(TriggerRect.Height);}
+
 		bool operator() (HouseClass * house, ObjectClass * object, TriggerClass * trigger, Cell const & cell);
 
 		bool operator == (TActionClass const & rvalue) const {return(memcmp(this, &rvalue, sizeof(*this)) == 0);}
@@ -269,6 +278,19 @@ class TActionClass : public AbstractClass
 		bool TAction_ENABLE_SPEECH(HouseClass * house, ObjectClass * object, TriggerClass * trig, Cell const & cell);
 		bool TAction_SET_GROUP_ID(HouseClass * house, ObjectClass * object, TriggerClass * trig, Cell const & cell);
 		bool TAction_TALK_BUBBLE(HouseClass * house, ObjectClass * object, TriggerClass * trig, Cell const & cell);
+		bool TAction_GIVE_CREDITS(HouseClass * house, ObjectClass * object, TriggerClass * trig, Cell const & cell);
+		bool TAction_ENABLE_SHORT_GAME(HouseClass * house, ObjectClass * object, TriggerClass * trig, Cell const & cell);
+		bool TAction_DISABLE_SHORT_GAME(HouseClass * house, ObjectClass * object, TriggerClass * trig, Cell const & cell);
+		bool TAction_CREATE_BUILDING_AT(HouseClass * house, ObjectClass * object, TriggerClass * trig, Cell const & cell);
+		bool TAction_HOUSE_DESTROY_ALL(HouseClass * house, ObjectClass * object, TriggerClass * trig, Cell const & cell);
+		bool TAction_MAKE_ELITE(HouseClass * house, ObjectClass * object, TriggerClass * trig, Cell const & cell);
+		bool TAction_ENABLE_ALLY_REVEAL(HouseClass * house, ObjectClass * object, TriggerClass * trig, Cell const & cell);
+		bool TAction_DISABLE_ALLY_REVEAL(HouseClass * house, ObjectClass * object, TriggerClass * trig, Cell const & cell);
+		bool TAction_CREATE_AUTOSAVE(HouseClass * house, ObjectClass * object, TriggerClass * trig, Cell const & cell);
+		bool TAction_DELETE_OBJECT(HouseClass * house, ObjectClass * object, TriggerClass * trig, Cell const & cell);
+		bool TAction_ALL_ASSIGN_MISSION(HouseClass * house, ObjectClass * object, TriggerClass * trig, Cell const & cell);
+		bool TAction_MAKE_ALLY_ONE_WAY(HouseClass * house, ObjectClass * object, TriggerClass * trig, Cell const & cell);
+		bool TAction_MAKE_ENEMY_ONE_WAY(HouseClass * house, ObjectClass * object, TriggerClass * trig, Cell const & cell);
 };
 
 AttachType Attaches_To(TActionType event);

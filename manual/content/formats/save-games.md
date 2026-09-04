@@ -33,6 +33,8 @@ The dialog names a new save `SAVE` followed by four hexadecimal digits, drawing 
 
 A campaign or skirmish save requested through the save dialog is written immediately while that dialog has the scenario paused. A multiplayer click instead submits a synchronized `SAVEGAME` command. When that command executes, each peer copies one pending filename and description; duplicate commands before the frame ends share that one request. The file is written only after the command queue has finished and the end-of-frame deletion pass has retired every object already marked for removal.
 
+The [Create Autosave](/mapping/actions/taction-create-autosave/) trigger action takes the same end-of-frame path in every kind of game. A campaign or skirmish game writes `AUTOSAVE1.SAV`, listed under the description `Auto-Save` and replaced by the next autosave; a multiplayer game writes the multiplayer save file. A request made while another is pending shares it.
+
 Once a connection is destroyed or a synchronized `REMOVEPLAYER` command executes, multiplayer saving is disabled for the rest of that match and any pending request is cancelled. The options dialog disables its Save button in that state. Restarting the mission does not restore the button or accept another request; selecting and starting a new game does.
 
 ## What the file holds

@@ -145,7 +145,7 @@
 unsigned int ExpectedGameVersion = LoadOptionsClass::GAMEVER_OPENTS;
 
 static bool MultiplayerSavingAllowed = true;
-static bool MultiplayerSavePending = false;
+static bool SavePending = false;
 static std::string PendingSaveFileName;
 static std::string PendingSaveDescription;
 
@@ -1022,8 +1022,8 @@ static bool Save_Game(const char *file_name, char const * descr)
 
 /// <summary>
 /// Accepts a save request at the boundary shared by every engine caller.
-/// Solo and skirmish games save immediately. A synchronized multiplayer request is copied
-/// into module-owned storage and held until the frame has finished retiring dead objects.
+/// Solo and skirmish games save immediately. A synchronized multiplayer request is held until
+/// the frame has finished retiring dead objects.
 /// </summary>
 /// <returns>Returns true when the save completed or the multiplayer request was accepted.</returns>
 bool Request_Save_Game(char const * file_name, char const * descr)
@@ -1034,36 +1034,51 @@ bool Request_Save_Game(char const * file_name, char const * descr)
 		return(Save_Game(file_name, descr));
 	}
 
+	return(Schedule_Save_Game(file_name, descr));
+}
+
+
+/// <summary>
+/// Accepts a save request from inside the frame, whatever the session type.
+/// The request is copied into module-owned storage and written by Process_Pending_Save_Game
+/// once the frame has finished retiring dead objects. A request already pending keeps its
+/// own name.
+/// </summary>
+/// <returns>Returns true when the request was accepted.</returns>
+bool Schedule_Save_Game(char const * file_name, char const * descr)
+{
+	if (file_name == NULL || descr == NULL) return(false);
+
 	if (!MultiplayerSavingAllowed) {
-		DebugString("Ignoring multiplayer save request because a player has left this match\n");
+		DebugString("Ignoring save request because a player has left this match\n");
 		return(false);
 	}
 
-	if (MultiplayerSavePending) {
-		DebugString("Coalescing duplicate multiplayer save request\n");
+	if (SavePending) {
+		DebugString("Coalescing duplicate save request\n");
 		return(true);
 	}
 
 	PendingSaveFileName = file_name;
 	PendingSaveDescription = descr;
-	MultiplayerSavePending = true;
+	SavePending = true;
 	return(true);
 }
 
 
 /// <summary>
-/// Writes the synchronized save request accepted during this frame, if any.
+/// Writes the save request accepted during this frame, if any.
 /// The request is cleared before writing so a callback cannot cause it to be written twice.
 /// </summary>
 void Process_Pending_Save_Game(void)
 {
-	if (!MultiplayerSavePending) return;
+	if (!SavePending) return;
 
 	std::string file_name;
 	std::string description;
 	file_name.swap(PendingSaveFileName);
 	description.swap(PendingSaveDescription);
-	MultiplayerSavePending = false;
+	SavePending = false;
 
 	if (MultiplayerSavingAllowed) {
 		HWND dialog = OwnerDraw::Custom_Message_Box(Fetch_String(TXT_SAVING_GAME), NULL, NULL);
@@ -1085,7 +1100,7 @@ void Process_Pending_Save_Game(void)
 void Reset_Multiplayer_Save_State(void)
 {
 	MultiplayerSavingAllowed = true;
-	MultiplayerSavePending = false;
+	SavePending = false;
 	PendingSaveFileName.clear();
 	PendingSaveDescription.clear();
 }
@@ -1097,7 +1112,7 @@ void Reset_Multiplayer_Save_State(void)
 void Disable_Multiplayer_Saving(void)
 {
 	MultiplayerSavingAllowed = false;
-	MultiplayerSavePending = false;
+	SavePending = false;
 	PendingSaveFileName.clear();
 	PendingSaveDescription.clear();
 }

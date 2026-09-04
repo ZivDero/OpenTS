@@ -25,6 +25,7 @@ bool Get_Savefile_Info(char const * name, SaveVersionInfo * info);
 bool Load_Game(const char *file_name);
 bool Reconcile_Players(void);
 bool Request_Save_Game(char const * file_name, char const * descr);
+bool Schedule_Save_Game(char const * file_name, char const * descr);
 void Process_Pending_Save_Game(void);
 void Reset_Multiplayer_Save_State(void);
 void Disable_Multiplayer_Saving(void);

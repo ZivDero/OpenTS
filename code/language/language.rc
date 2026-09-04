@@ -2435,6 +2435,7 @@ BEGIN
     TXT_CHAT_TO_ALL_DESC    "Starts a message to every player."
     TXT_CHAT_TO_ALLIES      "Message to Team"
     TXT_CHAT_TO_ALLIES_DESC "Starts a message to your allies, or to the other observers while you watch."
+    TXT_AUTOSAVE            "Auto-Save"
 END
 
 #endif    // English (U.S.) resources
