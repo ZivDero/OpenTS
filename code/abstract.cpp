@@ -70,7 +70,7 @@ AbstractClass::AbstractClass(void) :
 /// </summary>
 AbstractClass::~AbstractClass(void)
 {
-	Destroy_Components(Entity);
+	Destroy_Components(*this);
 }
 
 
@@ -195,7 +195,7 @@ void AbstractClass::Serialize(SaveStreamClass & stream)
 {
 	stream.Serialize(ID);
 	stream.Serialize(Dirty);
-	Serialize_Components(Entity, stream);
+	Serialize_Components(*this, stream);
 }
 
 
@@ -211,7 +211,7 @@ void AbstractClass::Compute_CRC(CRCEngine & crc) const
 	assert(this != NULL);
 
 	crc(ID);
-	Compute_Component_CRC(Entity, crc);
+	Compute_Component_CRC(*this, crc);
 }
 
 

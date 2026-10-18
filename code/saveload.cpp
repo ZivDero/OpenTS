@@ -68,6 +68,7 @@
 #include "bullet.h"
 #include "bullettype.h"
 #include "classfactory.h"
+#include "component.h"
 #include "ctrlgroup.h"
 #include "data.h"
 #include "dbgprint.h"
@@ -1137,6 +1138,7 @@ bool Load_Game(const char *file_name)
 	Session.Type = (GameType)info.Get_Game_Type();
 
 	Swizzler.Discard();
+	Discard_Component_Refs();
 
 	// Read before the save replaces the session options.
 	int const solo_speed = Launch::Is_Active() ? Session.Pending_Game_Speed() : Options.GameSpeed;
@@ -1159,6 +1161,7 @@ bool Load_Game(const char *file_name)
 		// What was loaded stays in the heaps until the next teardown, so the requests it
 		// registered must not be answered into it once the game that follows has moved on.
 		Swizzler.Discard();
+		Discard_Component_Refs();
 		return(false);
 	}
 	if (stream.Offset() != stream.Size()) {
@@ -1167,8 +1170,10 @@ bool Load_Game(const char *file_name)
 
 	if (!Swizzler.Resolve()) {
 		DebugString("\t***** FAILED! (pointers left unresolved)\n");
+		Discard_Component_Refs();
 		return(false);
 	}
+	Resolve_Component_Refs();
 
 	/*
 	**	Fixup any expediency data that can be inferred from the physical

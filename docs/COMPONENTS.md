@@ -2,9 +2,9 @@
 
 Game objects can carry components: data and state stored in a
 [flecs](https://github.com/SanderMertens/flecs) world beside the object rather
-than as members of its class. The storage, its save block and its checksum are
-in place in `code/component.h`. References between objects, type prefabs and
-the first port of an existing feature are designed here but not built yet.
+than as members of its class. The storage, references between objects, the
+save block and the checksum are in place in `code/component.h`. Type prefabs
+and the first port of an existing feature are designed here but not built yet.
 [Project direction](DIRECTION.md) explains why OpenTS is moving toward
 components.
 
@@ -52,6 +52,9 @@ renaming a registered type breaks existing saves.
 default values when the object has none. `Get_Component<T>(object)` returns it
 or `nullptr`, and `Remove_Component<T>(object)` removes it.
 
+A component refers to another game object through an `ObjectRefClass` member;
+see [Object references](#object-references).
+
 ## Entities
 
 Every `AbstractClass` can own components. That includes types, houses,
@@ -60,8 +63,11 @@ state off cells for now; see [Cells](#cells).
 
 - `AbstractClass::Entity` holds the object's flecs entity, or 0 while it has
   none. It is 64 bits wide on Win32 and x64.
-- The entity is created when the object receives its first component. An
-  object without components costs only that member.
+- The entity is created when the object receives its first component or
+  another component first refers to it. An object without an entity costs
+  only that member.
+- Each entity carries the object it belongs to as an owner component. The
+  owner is never saved or checksummed, and is rebuilt with the entity.
 - `~AbstractClass` deletes the object's entity with its components. A handle
   to it then fails its liveness check.
 - `AbstractClass` cannot be copied, so no two objects share an entity.
@@ -107,9 +113,8 @@ Rendering and audio code that runs on other threads does not touch it.
 
 ### Pointers
 
-- A component holds plain values: no `AbstractClass` pointers and no owning
-  raw pointers. A reference to another object waits for
-  [object references](#object-references).
+- A component holds plain values and `ObjectRefClass` references: no
+  `AbstractClass` pointers and no owning raw pointers.
 - Component data moves when its entity gains or loses a component. Do not
   keep a pointer to a component across a call that adds or removes components
   on the same entity.
@@ -150,33 +155,38 @@ but not cells.
 
 ## Object references
 
-This part is designed but not built.
+`ObjectRefClass` refers to another game object through that object's entity.
+`Set(object)` points it at an object, giving the object an entity if it has
+none, `Get()` returns the object or `nullptr`, and `Clear()` empties it. Once
+the object is destroyed, `Get()` returns `nullptr`, so a component never needs
+to be told about the death. Pass the reference to `stream.Serialize` and
+`Compute_CRC` like any other member.
 
-A component will refer to another object by its entity handle, never by an
-`AbstractClass` pointer. `Detach_This_From_All` in `code/tracker.cpp` reaches
-only the trackers for the dead object's kind, so a house or type holding a
-pointer to a unit is not told when the unit dies. A handle's liveness check
-has no such gap.
+Use a reference rather than an `AbstractClass` pointer. `Detach_This_From_All`
+in `code/tracker.cpp` reaches only the trackers for the dead object's kind, so
+a house or type holding a pointer to a unit is not told when the unit dies.
 
-The entity generation in flecs is 16 bits. A handle passes its liveness check
-again once its index has been deleted and reused 65,536 times, so a component
-that keeps a handle for a long game must not rely on the check alone for an
-object kind that is created and destroyed that often.
+The entity generation in flecs is 16 bits. A reference reads its object again
+once the entity's index has been deleted and reused 65,536 times, and then
+returns whichever object holds that index. Do not keep a reference for a long
+game to an object kind created and destroyed that often without checking what
+`Get()` returns.
 
-Each entity will carry an owner component, a pointer back to its
-`AbstractClass`. It is rebuilt with the entity, never saved, and registered so
-that an object does not inherit its type's owner.
+Make each reference a direct member of its component, not an element of a
+container inside it. A load records each reference by its position in the
+component, and fails the load for one read anywhere else.
 
-In a save, a reference travels as the swizzle identity of the object that owns
-the target entity, and a dead handle travels as null. Swizzle slots cannot sit
-in component storage, which moves (see the rule in `code/savestream.h:61`). On
-load, each object reads its references into a staging array it owns, sized
-from the record before any slot is registered.
+The checksum folds in the referenced object's `ID`, or a marker for an empty
+reference.
 
-Per-object `Post_Load` runs before the swizzle table is resolved
-(`saveload.cpp:262` and `saveload.cpp:1169`), so staged pointers are still
-identities there. The pass that turns them into entity handles runs from
-`Post_Load_Game`.
+### References in a save
+
+A reference travels as the save identity of the object it points at, the same
+four bytes a pointer member uses, and one whose object is destroyed travels
+empty. On load, the reference stays empty until `Load_Game` resolves the
+save's pointers, and is set right after that pass, before `Post_Load_Game`
+runs. A class's own `Post_Load` therefore sees its components' references
+empty.
 
 ## Types as prefabs
 
@@ -196,8 +206,8 @@ until the object owns a copy.
 - For `ObjectClass` descendants, the type is the one `Class_Of` returns. Other
   kinds name their type when a component first needs one.
 - A save writes only the components an entity owns. Inherited ones come back
-  with the type's own record, and `Post_Load_Game` restores each object's
-  `IsA` link from its type.
+  with the type's own record, and the load restores each object's `IsA` link
+  from its type after it resolves references.
 
 ## Rollout
 
@@ -205,11 +215,10 @@ Each step lands separately and leaves the game playable.
 
 1. **Storage.** Done: flecs vendored and built in all four configurations,
    the registry, the entity on `AbstractClass`, the save block and the
-   checksum. `tests/components` covers a save round trip, each refusal, entity
-   deletion and checksum order, with no game data.
-2. **Object references.** Add the owner component, entity handles in
-   components, and the staged save path. Tests cover a reference to a deleted
-   entity and a reference that survives a save.
+   checksum.
+2. **Object references.** Done: the owner component, `ObjectRefClass`, and
+   references resolved after a load's pointers. `tests/components` covers
+   both steps with no game data.
 3. **Prefabs.** Create type entities, link objects with `IsA`, and read one
    rules key into a type component. Check first what deleting a prefab does to
    the `IsA` links of objects that still have them.
@@ -221,5 +230,5 @@ Each step lands separately and leaves the game playable.
    record.
 
 These are left for later decisions: simulation state on cells once cells are
-in the sync checksum, and simulation queries whose results are sorted by a key the save
-carries, such as the object's `ID`.
+in the sync checksum, and simulation queries whose results are sorted by a key
+the save carries, such as the object's `ID`.

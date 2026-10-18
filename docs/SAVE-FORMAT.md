@@ -139,6 +139,8 @@ Every object record except a locomotor's carries the object's
 | 4 | Length of the component's body |
 | | The body: the members the component's `Serialize` names |
 
+A reference from a component to another object travels as that object's swizzle
+identity, like a pointer member, and is 0 when the object no longer exists.
 An object without components writes a count of 0. The reader fails the load
 on a name the build does not register, on a name that appears twice in one
 record, and on a body its `Serialize` does not read to exactly its length.
