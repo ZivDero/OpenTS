@@ -63,41 +63,6 @@ TaskForceClass::~TaskForceClass(void)
 
 
 /// <summary>
-/// Creates a copy of the specified task force.
-/// </summary>
-TaskForceClass::TaskForceClass(TaskForceClass const & that) :
-	BASECLASS(that)
-{
-	Group = that.Group;
-	ClassCount = that.ClassCount;
-	Scope = that.Scope;
-
-	for (int i = 0; i < ClassCount; i++) {
-		Members[i] = that.Members[i];
-	}
-}
-
-
-/// <summary>
-/// Copies the specified task force over this one.
-/// </summary>
-/// <returns>Returns with this task force, now holding the same members as the source.</returns>
-TaskForceClass TaskForceClass::operator=(TaskForceClass const & that)
-{
-	if (this != &that) {
-		Group = that.Group;
-		ClassCount = that.ClassCount;
-		Scope = that.Scope;
-
-		for (int i = 0; i < ClassCount; i++) {
-			Members[i] = that.Members[i];
-		}
-	}
-	return(*this);
-}
-
-
-/// <summary>
 /// Fetches the number of objects needed to fill out this task force.
 /// This routine is used by the team code to know how many recruits must be gathered
 /// before the team can be considered complete.

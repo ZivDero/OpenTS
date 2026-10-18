@@ -46,9 +46,6 @@ class TaskForceClass : public AbstractTypeClass
 		int Needed_Tech_Level(void) const;
 		bool Has_Only_Infantry(void) const;
 
-		TaskForceClass(TaskForceClass const &that);
-		TaskForceClass operator=(TaskForceClass const &that);
-
 	public:
 		/*
 		 * This is the group number that teams built from this task force belong to. A team

@@ -99,6 +99,11 @@ class AbstractClass : public IPersistent
 		AbstractClass(void);
 		virtual ~AbstractClass(void);
 
+		// A game object has one identity and is registered by its address, so it is never
+		// copied.
+		AbstractClass(AbstractClass const &) = delete;
+		AbstractClass & operator = (AbstractClass const &) = delete;
+
 
 		virtual bool Load(SaveStreamClass & stream) override;
 		virtual bool Save(SaveStreamClass & stream, bool cleardirty) override;
@@ -106,13 +111,6 @@ class AbstractClass : public IPersistent
 		virtual int What_Am_I(void) const;
 		virtual int Fetch_ID(void) const;
 		virtual void Create_ID(void);
-
-		AbstractClass & operator = (const AbstractClass & that)
-		{
-			ID = that.ID;
-			Dirty = that.Dirty;
-			return(*this);
-		}
 
 		/*
 		 * Lists this object's members for the save game. An implementation serializes its
