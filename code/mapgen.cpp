@@ -4672,7 +4672,7 @@ ScenarioState MapGeneratorClass::Init_Map(bool full_init, CCINIClass * scenario)
 
 		if (changed) {
 			Map.Init_Clear();
-			Map.Set_Map_Dimensions(size, true, 0, true);
+			Map.Set_Map_Dimensions(size, 0, true);
 			Map.Set_Local_Dimensions(lsize);
 			if (TacticalMap != NULL) {
 				delete TacticalMap;

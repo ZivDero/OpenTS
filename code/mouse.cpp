@@ -452,7 +452,7 @@ bool MouseClass::Load(SaveStreamClass & stream)
 		*/
 		Init_Cells();
 
-		Set_Map_Dimensions(PlayRect, 1, 0, false);
+		Set_Map_Dimensions(PlayRect, 0, false);
 
 		CellSubzones = new CellSubzoneStruct[CellZoneCount];
 		CellZones = new CellZoneStruct[CellZoneCount];

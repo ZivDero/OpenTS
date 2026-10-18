@@ -3026,7 +3026,7 @@ bool DisplayClass::Read_INI(CCINIClass const & ini)
 
 	Init_Cells();
 
-	Set_Map_Dimensions(rect, true, 0, true);
+	Set_Map_Dimensions(rect, 0, true);
 
 	int cell_height = ini.Get_Int(name, "Level", 0);
 

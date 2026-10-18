@@ -121,7 +121,7 @@ class RadarClass: public DisplayClass
 		virtual void AI(KeyNumType & input, Point2D const & xy) override;
 		virtual void Draw_It(bool complete=false) override;
 		virtual void Reposition_Sidebar(void) override;
-		virtual void Set_Map_Dimensions(Rect const & size, bool, int cell_height, bool) override;
+		virtual void Set_Map_Dimensions(Rect const & size, int cell_height, bool) override;
 		virtual void Set_Local_Dimensions(Rect const & size) override;
 		virtual void Set_Tactical_Position(Coord const & coord);
 		virtual void Init_For_House(void);

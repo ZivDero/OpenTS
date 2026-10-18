@@ -660,9 +660,9 @@ int RadarClass::RTacticalClass::Action(unsigned flags, KeyNumType & key)
  * HISTORY:                                                                                    *
  *   05/08/1995 JLB : Created.                                                                 *
  *=============================================================================================*/
-void RadarClass::Set_Map_Dimensions(Rect const & size, bool reset_cells, int cell_height, bool refresh_map)
+void RadarClass::Set_Map_Dimensions(Rect const & size, int cell_height, bool refresh_map)
 {
-	BASECLASS::Set_Map_Dimensions(size, reset_cells, cell_height, refresh_map);
+	BASECLASS::Set_Map_Dimensions(size, cell_height, refresh_map);
 }
 
 

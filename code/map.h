@@ -345,7 +345,7 @@ class MapClass: public GScreenClass
 
 		virtual bool Is_Scrolling(void) const {return(false);};
 		virtual void Logic(void);
-		virtual void Set_Map_Dimensions(Rect const & size, bool, int cell_height, bool);
+		virtual void Set_Map_Dimensions(Rect const & size, int cell_height, bool);
 		virtual void Set_Local_Dimensions(Rect const & size);
 
 		/*
