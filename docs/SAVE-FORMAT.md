@@ -124,6 +124,25 @@ numbers the objects it meets rather than writing the address one sat at, so
 the body depends neither on the pointer width of the build that wrote it nor
 on where the objects were in memory.
 
+### Components
+
+Every object record except a locomotor's carries the object's
+[components](COMPONENTS.md) right after `ID` and `Dirty`, the two members
+`AbstractClass` adds, and before the members of the classes derived from it:
+
+| Size | Field |
+| --- | --- |
+| 4 | Number of components |
+| | Each component, in the order the build registers them: |
+| 2 | Length of the component's registered name |
+| | The name's bytes |
+| 4 | Length of the component's body |
+| | The body: the members the component's `Serialize` names |
+
+An object without components writes a count of 0. The reader fails the load
+on a name the build does not register, on a name that appears twice in one
+record, and on a body its `Serialize` does not read to exactly its length.
+
 ## Versions
 
 Two numbers gate a save. The format version in the header says how to parse

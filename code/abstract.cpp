@@ -41,6 +41,7 @@
 #include "abstract.h"
 
 #include "_rtti.h"
+#include "component.h"
 #include "coord.h"
 #include "crc.h"
 #include "globals.h"
@@ -58,7 +59,8 @@
 /// </summary>
 AbstractClass::AbstractClass(void) :
 	ID(-1),
-	Dirty(false)
+	Dirty(false),
+	Entity(0)
 {
 }
 
@@ -68,7 +70,7 @@ AbstractClass::AbstractClass(void) :
 /// </summary>
 AbstractClass::~AbstractClass(void)
 {
-	/// empty
+	Destroy_Components(Entity);
 }
 
 
@@ -193,6 +195,7 @@ void AbstractClass::Serialize(SaveStreamClass & stream)
 {
 	stream.Serialize(ID);
 	stream.Serialize(Dirty);
+	Serialize_Components(Entity, stream);
 }
 
 
@@ -208,6 +211,7 @@ void AbstractClass::Compute_CRC(CRCEngine & crc) const
 	assert(this != NULL);
 
 	crc(ID);
+	Compute_Component_CRC(Entity, crc);
 }
 
 

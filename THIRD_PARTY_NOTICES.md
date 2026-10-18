@@ -22,6 +22,8 @@ remains under its own license and copyright notices.
 | [FreeType](https://freetype.org)                                   | Font rasterization used by RmlUi          | FTL          |
 | [zlib](https://zlib.net)                                           | Compressed font support, bundled with FreeType | zlib |
 | [Dear ImGui](https://github.com/ocornut/imgui)                     | Developer overlays                        | MIT          |
+| [flecs](https://github.com/SanderMertens/flecs)                    | Component storage for game objects        | MIT          |
+| [wyhash](https://github.com/wangyi-fudan/wyhash)                   | Hashing bundled with flecs                | Unlicense    |
 | [stb](https://github.com/nothings/stb)                             | Rectangle packing, text editing, and TrueType headers bundled with Dear ImGui | MIT or Unlicense |
 | [stb_image](https://github.com/nothings/stb)                       | PNG and TGA decoding for the UI, bundled with bimg | MIT or Unlicense |
 | [miniz](https://github.com/richgel999/miniz)                       | Deflate compression for PNG screenshots and replay files, bundled with bimg | MIT |

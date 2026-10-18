@@ -131,6 +131,7 @@ jobs:
           cp thirdparty/licenses/stb-imgui.txt artifact/OpenTS_THIRD_PARTY_LICENSES/stb-imgui.txt
           cp thirdparty/licenses/stb-image.txt artifact/OpenTS_THIRD_PARTY_LICENSES/stb-image.txt
           cp thirdparty/bgfx.cmake/bimg/3rdparty/tinyexr/deps/miniz/LICENSE artifact/OpenTS_THIRD_PARTY_LICENSES/miniz.txt
+          cp thirdparty/flecs/LICENSE artifact/OpenTS_THIRD_PARTY_LICENSES/flecs.txt
           cp thirdparty/SDL/LICENSE.txt artifact/OpenTS_THIRD_PARTY_LICENSES/sdl.txt
           cp thirdparty/SDL/src/video/yuv2rgb/LICENSE artifact/OpenTS_THIRD_PARTY_LICENSES/yuv2rgb.txt
           cp thirdparty/licenses/sdl-fdlibm.txt artifact/OpenTS_THIRD_PARTY_LICENSES/fdlibm.txt

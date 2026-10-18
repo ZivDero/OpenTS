@@ -13,7 +13,8 @@ easier to extend.
 There will be no full rewrite. Changes must keep the engine playable throughout
 the migration. Prefer composition to a deeper inheritance tree, keep new state
 separable from behavior, and avoid adding tight couplings to the existing class
-hierarchy.
+hierarchy. [Component storage](COMPONENTS.md) is the design for storing
+components on game objects.
 
 Portability follows the same incremental approach. Preparatory changes do not
 make a compiler or platform supported; [Building OpenTS](BUILDING.md) lists the

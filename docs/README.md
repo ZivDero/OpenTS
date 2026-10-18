@@ -9,6 +9,8 @@ The developer guides are split by subject:
 - [Rationale](RATIONALE.md) — reconstruction tools, recovered structure, and
   non-obvious implementation choices.
 - [Project direction](DIRECTION.md) — long-term architecture.
+- [Component storage](COMPONENTS.md) — the design for components on game
+  objects, stored in a flecs world.
 - [The saved game format](SAVE-FORMAT.md) — the layout of a `.SAV` file: its
   header, listing fields, compressed content, and object records.
 - [The replay file format](replay/REPLAY-FORMAT.md) — the `.cncr` format shared

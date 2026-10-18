@@ -64,6 +64,7 @@
 #include "cell.h"
 #include "classfactory.h"
 #include "command.h"
+#include "component.h"
 #include "conquer.h"
 #include "data.h"
 #include "dbgprint.h"
@@ -477,6 +478,7 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * , int )
 	}
 
 	RegisterClasses();
+	Register_Components();
 
 	/*
 	**	Get the full path to the .EXE

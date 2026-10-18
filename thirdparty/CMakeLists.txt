@@ -104,6 +104,30 @@ target_include_directories(lzo
 
 #
 # ---------------------------------------------------------
+# flecs (component storage)
+# ---------------------------------------------------------
+#
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/flecs/distr/flecs.c")
+    message(FATAL_ERROR
+        "thirdparty/flecs is empty. Fetch the submodules with:\n"
+        "  git submodule update --init --recursive")
+endif()
+
+# The single-file distribution is built here rather than through flecs' own CMakeLists.txt,
+# which builds every addon. Systems, pipelines, threads, REST and statistics stay out, and
+# a component must be registered before use, so that its flecs number follows the
+# engine's registration order. Consumers must see the same set of definitions.
+add_library(flecs STATIC "${CMAKE_CURRENT_SOURCE_DIR}/flecs/distr/flecs.c")
+target_include_directories(flecs PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/flecs/distr")
+target_compile_definitions(flecs PUBLIC
+    FLECS_CUSTOM_BUILD
+    FLECS_CPP
+    FLECS_OS_API_IMPL
+    FLECS_CPP_NO_AUTO_REGISTRATION
+)
+
+#
+# ---------------------------------------------------------
 # FreeType (font rasterization for RmlUi)
 # ---------------------------------------------------------
 #

@@ -41,6 +41,8 @@
 
 #include "persist.h"
 
+#include <cstdint>
+
 class AbstractTypeClass;
 class CRCEngine;
 class SaveStreamClass;
@@ -92,6 +94,10 @@ class AbstractClass : public IPersistent
 		 * true. Save clears it on request.
 		 */
 		bool Dirty;
+
+		// The flecs entity holding this object's components, or 0 while it has none;
+		// component.h reaches the components.
+		std::uint64_t Entity;
 
 		/*
 		**	Constructor & destructors.

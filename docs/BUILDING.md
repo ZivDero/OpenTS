@@ -71,6 +71,12 @@ vendored through `thirdparty/RmlUi`, `thirdparty/freetype`, and
 and without bzip2, PNG, HarfBuzz, or Brotli; Dear ImGui is compiled from its
 core sources without any of its bundled backends.
 
+Game objects keep their components in [flecs](https://github.com/SanderMertens/flecs),
+vendored through `thirdparty/flecs` at a tested tag and compiled from its
+single-file distribution with only its C++ API and its default operating system
+layer. Its systems, pipelines, threads, REST server and statistics are left out,
+and a component must be registered before it is used.
+
 [SDL](https://github.com/libsdl-org/SDL) 3 is vendored through `thirdparty/SDL`
 at a tested tag and linked statically. Only its video subsystem, which covers
 the window, its events, and keyboard and mouse input, is built. Its audio,
