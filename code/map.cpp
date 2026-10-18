@@ -106,6 +106,7 @@
 #include "ramp.hh"
 
 #include <algorithm>
+#include <memory>
 #include <new>
 #include <utility>
 #include <vector>
@@ -696,7 +697,8 @@ void MapClass::Init_Cells(void)
 		for (int x = 0; x < MAP_CELL_W; x++) {
 			int cellnum = x + y * MAP_CELL_H;
 			if (cellnum < Array.Length() && Array[cellnum] != NULL) {
-				new (Array[cellnum]) CellClass;
+				std::destroy_at(Array[cellnum]);
+				std::construct_at(Array[cellnum]);
 			}
 		}
 	}
@@ -767,7 +769,8 @@ void MapClass::Set_Map_Dimensions(Rect const & rect, int cell_height, bool refre
 					cc->Set_CellID(cell);
 					Array[idx] = cc;
 				} else {
-					c = new(c) CellClass;
+					std::destroy_at(c);
+					std::construct_at(c);
 					c->Set_CellID(cell);
 				}
 				Array[idx]->Height = cell_height;
@@ -779,7 +782,8 @@ void MapClass::Set_Map_Dimensions(Rect const & rect, int cell_height, bool refre
 		Fresh_Map();
 	}
 
-	new(&BlubCell) CellClass;
+	std::destroy_at(&BlubCell);
+	std::construct_at(&BlubCell);
 }
 
 
@@ -2080,7 +2084,8 @@ bool MapClass::Read_Binary_1(Straw & straw)
 		}
 	}
 
-	new (&BlubCell) CellClass;
+	std::destroy_at(&BlubCell);
+	std::construct_at(&BlubCell);
 	return(true);
 }
 
@@ -2115,7 +2120,8 @@ bool MapClass::Read_Binary_2(Straw & straw)
 		cell = CELL_NONE;
 		decomp.Get(&cell, sizeof(cell));
 	}
-	new (&BlubCell) CellClass;
+	std::destroy_at(&BlubCell);
+	std::construct_at(&BlubCell);
 	return(true);
 }
 
@@ -2147,7 +2153,8 @@ bool MapClass::Read_Binary_3(Straw & straw)
 		cell = CELL_NONE;
 		straw.Get(&cell, sizeof(cell));
 	}
-	new (&BlubCell) CellClass;
+	std::destroy_at(&BlubCell);
+	std::construct_at(&BlubCell);
 	return(true);
 }
 
@@ -2191,7 +2198,8 @@ bool MapClass::Read_Binary_4(Straw & straw)
 			decomp.Get(&tmp, sizeof(tmp));
 		}
 	}
-	new (&BlubCell) CellClass;
+	std::destroy_at(&BlubCell);
+	std::construct_at(&BlubCell);
 	return(complete && !decomp.Is_Damaged());
 }
 
@@ -2237,7 +2245,8 @@ bool MapClass::Read_Binary_5(Straw & straw)
 			decomp.Get(&tmp, sizeof(tmp));
 		}
 	}
-	new (&BlubCell) CellClass;
+	std::destroy_at(&BlubCell);
+	std::construct_at(&BlubCell);
 	return(complete && !decomp.Is_Damaged());
 }
 
