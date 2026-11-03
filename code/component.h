@@ -53,7 +53,7 @@ struct ComponentTypeClass
 
 
 // Every entity carries the object it belongs to. It is never saved, and an object does not
-// inherit it from its type.
+// read it from its type.
 struct ComponentOwnerClass
 {
 	AbstractClass * Object = nullptr;
@@ -84,6 +84,10 @@ flecs::world & Component_World(void);
 std::vector<ComponentTypeClass> const & Component_Types(void);
 void Add_Component_Type(ComponentTypeClass const & type);
 void Register_Components(void);
+bool Component_Reads_From_Type(flecs::entity_t component);
+
+// Call this after changing the type Component_Base returns for an object.
+void Relink_Component_Type(AbstractClass & object);
 
 // AbstractClass calls these from its destructor, Serialize and Compute_CRC.
 std::uint64_t Component_Entity(AbstractClass & object);
@@ -97,9 +101,9 @@ void Discard_Component_Refs(void);
 
 
 template<ComponentType T>
-void Register_Component(char const * name)
+void Register_Component_With(char const * name, flecs::entity_t oninstantiate)
 {
-	flecs::entity_t const id = Component_World().component<T>(name).id();
+	flecs::entity_t const id = Component_World().component<T>(name).add(flecs::OnInstantiate, oninstantiate).id();
 
 	Add_Component_Type({
 		name,
@@ -111,8 +115,42 @@ void Register_Component(char const * name)
 }
 
 
+// Registers state each object holds for itself; an object never reads it from its type.
 template<ComponentType T>
-T * Get_Component(AbstractClass & object)
+void Register_Component(char const * name)
+{
+	Register_Component_With<T>(name, flecs::DontInherit);
+}
+
+
+// Registers data a type holds for its objects, which read it until they get their own copy.
+template<ComponentType T>
+void Register_Type_Component(char const * name)
+{
+	Register_Component_With<T>(name, flecs::Inherit);
+}
+
+
+// Reads the object's own component, or its type's for a type component it has no copy of.
+template<ComponentType T>
+T const * Get_Component(AbstractClass const & object)
+{
+	flecs::world & world = Component_World();
+	if (object.Entity != 0) {
+		return(flecs::entity(world, object.Entity).try_get<T>());
+	}
+
+	AbstractClass const * base = object.Component_Base();
+	if (base == nullptr || base->Entity == 0 || !Component_Reads_From_Type(world.id<T>())) {
+		return(nullptr);
+	}
+	return(flecs::entity(world, base->Entity).try_get<T>());
+}
+
+
+// Fetches the component the object itself owns for writing, or nullptr while it has none.
+template<ComponentType T>
+T * Get_Own_Component(AbstractClass & object)
 {
 	if (object.Entity == 0) {
 		return(nullptr);
@@ -121,17 +159,8 @@ T * Get_Component(AbstractClass & object)
 }
 
 
-template<ComponentType T>
-T const * Get_Component(AbstractClass const & object)
-{
-	if (object.Entity == 0) {
-		return(nullptr);
-	}
-	return(flecs::entity(Component_World(), object.Entity).try_get<T>());
-}
-
-
-// Adds a default-constructed component, or returns the one the object already has.
+// Returns the component the object owns. One it lacks starts as a copy of its type's type
+// component, or with default values when there is none to copy.
 template<ComponentType T>
 T & Add_Component(AbstractClass & object)
 {

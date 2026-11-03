@@ -118,6 +118,9 @@ class AbstractClass : public IPersistent
 		virtual int Fetch_ID(void) const;
 		virtual void Create_ID(void);
 
+		// The object whose type components this object reads, or nullptr for none.
+		virtual AbstractClass * Component_Base(void) const {return(nullptr);}
+
 		/*
 		 * Lists this object's members for the save game. An implementation serializes its
 		 * base class first and then names every member it owns in the order the header

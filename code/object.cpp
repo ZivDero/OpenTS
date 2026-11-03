@@ -138,6 +138,15 @@
 #define	GRAVITY	1.4
 
 
+/// <summary>
+/// Fetches the object's type, whose type components the object reads.
+/// </summary>
+AbstractClass * ObjectClass::Component_Base(void) const
+{
+	return(const_cast<ObjectTypeClass *>(Class_Of()));
+}
+
+
 /***********************************************************************************************
  * ObjectClass::ObjectClass -- Default constructor for objects.                                *
  *                                                                                             *

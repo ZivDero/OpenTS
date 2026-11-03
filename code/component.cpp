@@ -56,6 +56,15 @@ std::deque<StagedRefClass> & Staged_Refs(void)
 }
 
 
+// The entities a load created, linked to their types once the swizzle pass has patched the
+// pointers those types are found through.
+std::vector<flecs::entity_t> & Staged_Links(void)
+{
+	static std::vector<flecs::entity_t> staged;
+	return(staged);
+}
+
+
 ReadingClass const *& Reading(void)
 {
 	static ReadingClass const * reading = nullptr;
@@ -82,6 +91,26 @@ ComponentTypeClass const * Find_Type(std::string const & name)
 		}
 	}
 	return(nullptr);
+}
+
+
+void Create_Entity(AbstractClass & object)
+{
+	object.Entity = Component_World().entity().set<ComponentOwnerClass>({&object}).id();
+}
+
+
+void Link_To_Type(AbstractClass & object)
+{
+	AbstractClass * base = object.Component_Base();
+	if (base == nullptr) {
+		return;
+	}
+
+	flecs::world & world = Component_World();
+	flecs::entity const prefab(world, Component_Entity(*base));
+	prefab.add(flecs::Prefab);
+	flecs::entity(world, object.Entity).is_a(prefab);
 }
 
 }	// namespace
@@ -134,13 +163,42 @@ void Register_Components(void)
 
 
 /// <summary>
-/// Fetches the object's entity, creating it with the object as its owner when the object
-/// has none.
+/// Reports whether objects read this registered component from their type.
+/// </summary>
+bool Component_Reads_From_Type(flecs::entity_t component)
+{
+	return(ecs_has_pair(Component_World(), component, EcsOnInstantiate, EcsInherit));
+}
+
+
+/// <summary>
+/// Points the object's entity at the type Component_Base now returns. An object without an
+/// entity needs no call, and the components the object owns stay as they are.
+/// </summary>
+void Relink_Component_Type(AbstractClass & object)
+{
+	if (object.Entity == 0) {
+		return;
+	}
+
+	flecs::entity const entity(Component_World(), object.Entity);
+	flecs::entity const previous = entity.target(flecs::IsA);
+	if (previous) {
+		entity.remove(flecs::IsA, previous);
+	}
+	Link_To_Type(object);
+}
+
+
+/// <summary>
+/// Fetches the object's entity. An object without one gets it now, with the object as its
+/// owner and linked to its type, which also gets an entity if it has none.
 /// </summary>
 std::uint64_t Component_Entity(AbstractClass & object)
 {
 	if (object.Entity == 0) {
-		object.Entity = Component_World().entity().set<ComponentOwnerClass>({&object}).id();
+		Create_Entity(object);
+		Link_To_Type(object);
 	}
 	return(object.Entity);
 }
@@ -245,7 +303,12 @@ void Serialize_Components(AbstractClass & object, SaveStreamClass & stream)
 			return;
 		}
 
-		flecs::entity_t const holder = Component_Entity(object);
+		if (object.Entity == 0) {
+			Create_Entity(object);
+			Staged_Links().push_back(object.Entity);
+		}
+
+		flecs::entity_t const holder = object.Entity;
 		ReadingClass const reading = {
 			holder,
 			type->ID,
@@ -293,9 +356,10 @@ void Compute_Component_CRC(AbstractClass const & object, CRCEngine & crc)
 
 
 /// <summary>
-/// Points every reference read since the load began at the object its slot now names. Call
-/// this once the swizzle pass has patched the slots, and before anything reads a reference.
-/// A reference whose component is gone by then is skipped.
+/// Points every reference read since the load began at the object its slot now names, then
+/// links each entity the load created to its object's type. Call this once the swizzle pass
+/// has patched the slots, and before anything reads a reference or a type component. A
+/// reference whose component or an entity whose object is gone by then is skipped.
 /// </summary>
 void Resolve_Component_Refs(void)
 {
@@ -311,16 +375,24 @@ void Resolve_Component_Refs(void)
 		}
 	}
 	Staged_Refs().clear();
+
+	for (flecs::entity_t const holder : Staged_Links()) {
+		if (world.is_alive(holder)) {
+			Link_To_Type(*flecs::entity(world, holder).get<ComponentOwnerClass>().Object);
+		}
+	}
+	Staged_Links().clear();
 }
 
 
 /// <summary>
-/// Drops the references read since the load began without resolving them, for a load that
-/// starts over or fails.
+/// Drops the references and type links read since the load began without resolving them,
+/// for a load that starts over or fails.
 /// </summary>
 void Discard_Component_Refs(void)
 {
 	Staged_Refs().clear();
+	Staged_Links().clear();
 }
 
 

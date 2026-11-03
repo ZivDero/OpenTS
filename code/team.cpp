@@ -3386,7 +3386,7 @@ void TeamClass::TMission_UNLOAD_TRUCK(TeamMissionClass * mission, bool)
 	while (unit != NULL) {
 		if (unit->RTTI == RTTI_UNIT) {
 			if (!strcmpi(unit->TClass->IniName, "TRUCKB")) {
-				((UnitClass *)unit)->Class = UnitTypes[UnitTypeClass::From_Name("TRUCKA")];
+				((UnitClass *)unit)->Change_Class(UnitTypes[UnitTypeClass::From_Name("TRUCKA")]);
 			}
 		}
 		unit = unit->Member;
@@ -3406,7 +3406,7 @@ void TeamClass::TMission_LOAD_TRUCK(TeamMissionClass * mission, bool)
 	while (unit != NULL) {
 		if (unit->RTTI == RTTI_UNIT) {
 			if (!strcmpi(unit->TClass->IniName, "TRUCKA")) {
-				((UnitClass *)unit)->Class = UnitTypes[UnitTypeClass::From_Name("TRUCKB")];
+				((UnitClass *)unit)->Change_Class(UnitTypes[UnitTypeClass::From_Name("TRUCKB")]);
 			}
 		}
 		unit = unit->Member;

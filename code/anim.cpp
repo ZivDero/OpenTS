@@ -67,6 +67,7 @@
 #include "ccrand.h"
 #include "cell.h"
 #include "combat.h"
+#include "component.h"
 #include "conquer.h"
 #include "crc.h"
 #include "draw.h"
@@ -915,6 +916,7 @@ void AnimClass::AI(void)
 					if (Class->ChainTo != NULL) {
 
 						Class = (AnimTypeClass *)Class->ChainTo;
+						Relink_Component_Type(*this);
 
 						IsToDelete = false;
 						Accum = 0;

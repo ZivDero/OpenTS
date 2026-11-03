@@ -148,6 +148,7 @@ class UnitClass : public FootClass
 		**	Member function prototypes.
 		*/
 		virtual ObjectTypeClass const * Class_Of(void) const override;
+		void Change_Class(UnitTypeClass const * type);
 		virtual char const * Full_Name(void) const override;
 		virtual void Detach(AbstractClass const * target, bool all = true) override;
 		virtual RTTIType Fetch_RTTI(void) const override;

@@ -2,9 +2,9 @@
 
 Game objects can carry components: data and state stored in a
 [flecs](https://github.com/SanderMertens/flecs) world beside the object rather
-than as members of its class. The storage, references between objects, the
-save block and the checksum are in place in `code/component.h`. Type prefabs
-and the first port of an existing feature are designed here but not built yet.
+than as members of its class. The storage, references between objects, type
+data, the save block and the checksum are in place in `code/component.h`. The
+first port of an existing feature is designed here but not built yet.
 [Project direction](DIRECTION.md) explains why OpenTS is moving toward
 components.
 
@@ -18,8 +18,8 @@ running from the object's own `AI` and event handlers, so the order in which
 objects act, draw random numbers and break ties does not change.
 
 An object's components hold state that would otherwise be new members on its
-class. Once prefabs are built, a type's components will hold the values read
-from the rules files, and the type's objects will inherit them.
+class. A type's components hold the values read from the rules files, and the
+type's objects read them.
 
 ## Why flecs
 
@@ -43,14 +43,20 @@ A component type is a default-constructible struct with two members:
 
 A type missing either does not compile as a component.
 
-Register each type once in `Register_Components` in `code/component.cpp`,
-with `Register_Component<T>("Name")`. Startup calls it right after the save
+Register each type once in `Register_Components` in `code/component.cpp`:
+`Register_Component<T>("Name")` for state each object holds, or
+`Register_Type_Component<T>("Name")` for data a type holds for its objects; see
+[Types as prefabs](#types-as-prefabs). Startup calls it right after the save
 classes are registered, before any object exists. Saves carry the name, so
 renaming a registered type breaks existing saves.
 
-`Add_Component<T>(object)` returns the object's component, creating it with
-default values when the object has none. `Get_Component<T>(object)` returns it
-or `nullptr`, and `Remove_Component<T>(object)` removes it.
+- `Get_Component<T>(object)` reads the component, or returns `nullptr` when the
+  object has none. The result is read-only.
+- `Add_Component<T>(object)` returns the component the object owns for writing,
+  creating it when the object has none.
+- `Get_Own_Component<T>(object)` returns the component the object owns for
+  writing, or `nullptr` when it owns none.
+- `Remove_Component<T>(object)` removes the component the object owns.
 
 A component refers to another game object through an `ObjectRefClass` member;
 see [Object references](#object-references).
@@ -190,24 +196,39 @@ empty.
 
 ## Types as prefabs
 
-This part is designed but not built.
+A type's entity is a prefab, and an object's entity links to it with `IsA`.
+Objects read a type component from their type until they own a copy. Objects
+descended from `ObjectClass` use the type `Class_Of` returns. Other kinds have
+no type until they override `Component_Base`.
 
-A type's entity will be a prefab. When an object's entity is created, the
-object's type gets an entity too, empty if it has no components, and the
-object's entity gets an `IsA` link to it. Reads then find the type's component
-until the object owns a copy.
-
+- Register rules data with `Register_Type_Component`. A component registered
+  with `Register_Component` is never read from the type, even when the type
+  owns one.
 - Rules data goes into type components where the type reads its INI section.
-  Read the keys where `manage.py update` can find them, or the manual extractor
-  needs an adapter for them.
-- To change a value for one object, give the object its own copy first. A
-  write to the type's component changes it for every object of that type,
-  just as a write to a type member does now.
-- For `ObjectClass` descendants, the type is the one `Class_Of` returns. Other
-  kinds name their type when a component first needs one.
-- A save writes only the components an entity owns. Inherited ones come back
-  with the type's own record, and the load restores each object's `IsA` link
-  from its type after it resolves references.
+- An object without an entity reads straight from its type and stays without
+  one. When an object does get an entity, its type gets one too, empty if it
+  has no components, and the link is made.
+- To change a value for one object, call `Add_Component` for its own copy, which
+  starts with the type's value. A write to the type's component changes it for
+  every object without a copy, just as a write to a type member does now.
+  `Remove_Component` drops the copy and the object reads its type again.
+- After changing an object's type for good, call `Relink_Component_Type`, as
+  `UnitClass::Change_Class` does. The components the object owns stay as they
+  are.
+- Add components from the object's most derived constructor or later. A base
+  class constructor cannot see the object's type, so an entity created there has
+  no link until `Relink_Component_Type` runs.
+- Delete a type after its objects. Objects still linked to a deleted type lose
+  the link and read nothing from it, and keep the components they own.
+- A save writes only the components an entity owns, so type data travels with
+  the type's record. A load links each entity it created to its type after it
+  resolves references, before `Post_Load_Game` runs. A class's own `Post_Load`
+  therefore reads no type components.
+
+Drawing a dumping harvester swaps its `Class` for the length of the draw
+without a relink. During that draw, a harvester with an entity reads its real
+type's components, and one without reads the unloading type's. Fix this before
+draw code reads a type component for units.
 
 ## Rollout
 
@@ -219,9 +240,8 @@ Each step lands separately and leaves the game playable.
 2. **Object references.** Done: the owner component, `ObjectRefClass`, and
    references resolved after a load's pointers. `tests/components` covers
    both steps with no game data.
-3. **Prefabs.** Create type entities, link objects with `IsA`, and read one
-   rules key into a type component. Check first what deleting a prefab does to
-   the `IsA` links of objects that still have them.
+3. **Prefabs.** Done: type entities, `IsA` links restored after a load, and
+   copies on first write.
 4. **Pilot port.** Move one existing feature's state into a component with
    its behavior preserved. Evidence: matching heap checksums in a loopback
    network game, and a save and load that plays on identically.

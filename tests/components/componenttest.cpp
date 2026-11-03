@@ -146,8 +146,14 @@ void Check(bool condition, char const * what)
 class TestObjectClass : public AbstractClass
 {
 	public:
+		TestObjectClass(void) = default;
+		explicit TestObjectClass(AbstractClass * type) : Type(type) {}
+
 		virtual ClassID Class_ID(void) const override {return(ClassID{});}
 		virtual RTTIType Fetch_RTTI(void) const override {return(RTTI_NONE);}
+		virtual AbstractClass * Component_Base(void) const override {return(Type);}
+
+		AbstractClass * Type = nullptr;
 };
 
 
@@ -229,6 +235,23 @@ struct LinkComponent
 		crc(Before);
 		Target.Compute_CRC(crc);
 		Second.Compute_CRC(crc);
+	}
+};
+
+
+// Data a type holds for its objects.
+struct SpeedComponent
+{
+	int Value = 0;
+
+	void Serialize(SaveStreamClass & stream)
+	{
+		stream.Serialize(Value);
+	}
+
+	void Compute_CRC(CRCEngine & crc) const
+	{
+		crc(Value);
 	}
 };
 
@@ -323,6 +346,7 @@ int main(void)
 	Register_Component<HealthComponent>("Health");
 	Register_Component<TagComponent>("Tag");
 	Register_Component<LopsidedComponent>("Lopsided");
+	Register_Type_Component<SpeedComponent>("Speed");
 
 	// The size of a record for an object without components: identity, ID, Dirty, count.
 	std::size_t const bare = sizeof(SwizzleIDType) + sizeof(int) + sizeof(bool) + sizeof(int);
@@ -478,8 +502,8 @@ int main(void)
 		Check(Get_Component<LinkComponent>(holder)->Target.Get() == nullptr, "a reference to a destroyed object is empty");
 
 		TestObjectClass other;
-		Get_Component<LinkComponent>(holder)->Target.Set(&other);
-		Get_Component<LinkComponent>(holder)->Target.Clear();
+		Get_Own_Component<LinkComponent>(holder)->Target.Set(&other);
+		Get_Own_Component<LinkComponent>(holder)->Target.Clear();
 		Check(Get_Component<LinkComponent>(holder)->Target.Get() == nullptr, "a cleared reference is empty");
 	}
 
@@ -562,7 +586,7 @@ int main(void)
 		Check(Checksum(first) == Checksum(second), "the checksum follows registration order, not addition order");
 		Check(Checksum(first) != Checksum(empty), "components change the checksum");
 
-		Get_Component<TagComponent>(second)->Value = 8;
+		Get_Own_Component<TagComponent>(second)->Value = 8;
 		Check(Checksum(first) != Checksum(second), "a changed value changes the checksum");
 
 		TestObjectClass a;
@@ -574,8 +598,237 @@ int main(void)
 		Add_Component<LinkComponent>(left).Target.Set(&a);
 		Add_Component<LinkComponent>(right).Target.Set(&b);
 		Check(Checksum(left) != Checksum(right), "references to different objects change the checksum");
-		Get_Component<LinkComponent>(right)->Target.Set(&a);
+		Get_Own_Component<LinkComponent>(right)->Target.Set(&a);
 		Check(Checksum(left) == Checksum(right), "references to the same object checksum alike");
+	}
+
+	/*
+	 * An object reads its type's type component without an entity of its own, and sees the
+	 * type's later changes.
+	 */
+	{
+		TestObjectClass type;
+		Add_Component<SpeedComponent>(type).Value = 6;
+
+		TestObjectClass object(&type);
+		SpeedComponent const * speed = Get_Component<SpeedComponent>(object);
+		Check(speed != nullptr && speed->Value == 6, "an object without an entity reads its type's component");
+		Check(object.Entity == 0, "reading a type's component creates no entity");
+		Check(Get_Own_Component<SpeedComponent>(object) == nullptr, "an object does not own what it reads from its type");
+
+		Add_Component<TagComponent>(object).Value = 2;
+		speed = Get_Component<SpeedComponent>(object);
+		Check(speed != nullptr && speed->Value == 6, "an object with an entity reads its type's component");
+		Check(Get_Own_Component<SpeedComponent>(object) == nullptr, "gaining an entity copies nothing from the type");
+
+		Get_Own_Component<SpeedComponent>(type)->Value = 8;
+		speed = Get_Component<SpeedComponent>(object);
+		Check(speed != nullptr && speed->Value == 8, "an object sees its type's later changes");
+	}
+
+	/*
+	 * An object's entity links to its type, and the type gets an entity for that even with
+	 * no components.
+	 */
+	{
+		TestObjectClass type;
+		TestObjectClass object(&type);
+		Add_Component<TagComponent>(object);
+		Check(type.Entity != 0, "linking an object gives its type an entity");
+		Check(flecs::entity(Component_World(), type.Entity).has(flecs::Prefab), "a type's entity is a prefab");
+		Check(flecs::entity(Component_World(), object.Entity).target(flecs::IsA).id() == type.Entity, "an object's entity links to its type");
+
+		Add_Component<SpeedComponent>(type).Value = 3;
+		SpeedComponent const * speed = Get_Component<SpeedComponent>(object);
+		Check(speed != nullptr && speed->Value == 3, "a component the type gains after linking reads through");
+	}
+
+	/*
+	 * Components registered as object state stay with the object that holds them.
+	 */
+	{
+		TestObjectClass type;
+		Add_Component<TagComponent>(type).Value = 5;
+
+		TestObjectClass bare(&type);
+		Check(Get_Component<TagComponent>(bare) == nullptr, "an object without an entity does not read its type's state");
+
+		TestObjectClass linked(&type);
+		Add_Component<HealthComponent>(linked);
+		Check(Get_Component<TagComponent>(linked) == nullptr, "an object with an entity does not read its type's state");
+		Check(Add_Component<TagComponent>(linked).Value == 0, "state an object gains starts from defaults, not from its type");
+	}
+
+	/*
+	 * Adding a type component to an object gives it a copy, which only that object sees.
+	 * Removing the copy returns it to the type's.
+	 */
+	{
+		TestObjectClass type;
+		Add_Component<SpeedComponent>(type).Value = 6;
+		TestObjectClass object(&type);
+		TestObjectClass other(&type);
+		Add_Component<TagComponent>(other);
+
+		SpeedComponent & own = Add_Component<SpeedComponent>(object);
+		Check(own.Value == 6, "an object's copy starts with its type's value");
+		own.Value = 9;
+
+		Check(Get_Component<SpeedComponent>(object)->Value == 9, "an object reads its copy");
+		Check(Get_Component<SpeedComponent>(type)->Value == 6, "an object's copy leaves the type alone");
+		Check(Get_Component<SpeedComponent>(other)->Value == 6, "an object's copy leaves other objects alone");
+
+		Get_Own_Component<SpeedComponent>(type)->Value = 7;
+		Check(Get_Component<SpeedComponent>(object)->Value == 9, "a copy does not follow the type");
+
+		Remove_Component<SpeedComponent>(object);
+		Check(Get_Component<SpeedComponent>(object)->Value == 7, "removing a copy returns the object to its type's value");
+
+		Remove_Component<SpeedComponent>(other);
+		Check(Get_Component<SpeedComponent>(other)->Value == 7, "removing what an object only reads changes nothing");
+	}
+
+	/*
+	 * A type component the type lacks starts from defaults.
+	 */
+	{
+		TestObjectClass type;
+		TestObjectClass object(&type);
+		Check(Get_Component<SpeedComponent>(object) == nullptr, "a type without the component gives its objects none");
+		Check(Add_Component<SpeedComponent>(object).Value == 0, "with nothing to copy, a type component starts from defaults");
+	}
+
+	/*
+	 * Changing an object's type moves its reads to the new type and keeps what it owns.
+	 */
+	{
+		TestObjectClass small;
+		TestObjectClass large;
+		Add_Component<SpeedComponent>(small).Value = 1;
+		Add_Component<SpeedComponent>(large).Value = 2;
+
+		TestObjectClass bare(&small);
+		bare.Type = &large;
+		Relink_Component_Type(bare);
+		Check(bare.Entity == 0, "relinking an object without an entity creates none");
+		Check(Get_Component<SpeedComponent>(bare)->Value == 2, "an object without an entity reads its new type");
+
+		TestObjectClass linked(&small);
+		Add_Component<TagComponent>(linked).Value = 4;
+		linked.Type = &large;
+		Relink_Component_Type(linked);
+		Check(Get_Component<SpeedComponent>(linked)->Value == 2, "a relinked object reads its new type");
+		Check(flecs::entity(Component_World(), linked.Entity).target(flecs::IsA).id() == large.Entity, "a relinked object has one link, to its new type");
+		Check(Get_Component<TagComponent>(linked)->Value == 4, "relinking keeps the object's state");
+
+		TestObjectClass copied(&small);
+		Add_Component<SpeedComponent>(copied).Value = 12;
+		copied.Type = &large;
+		Relink_Component_Type(copied);
+		Check(Get_Component<SpeedComponent>(copied)->Value == 12, "relinking keeps the object's copy");
+	}
+
+	/*
+	 * Deleting a type takes its data away from objects still linked to it, and leaves
+	 * those objects and their own components alive.
+	 */
+	{
+		auto type = std::make_unique<TestObjectClass>();
+		Add_Component<SpeedComponent>(*type).Value = 6;
+
+		TestObjectClass reader(type.get());
+		Add_Component<TagComponent>(reader).Value = 3;
+		TestObjectClass copied(type.get());
+		Add_Component<SpeedComponent>(copied).Value = 11;
+
+		type.reset();
+		reader.Type = nullptr;
+		copied.Type = nullptr;
+
+		Check(Component_World().is_alive(reader.Entity), "deleting a type leaves its objects' entities alive");
+		Check(!flecs::entity(Component_World(), reader.Entity).target(flecs::IsA), "deleting a type removes its objects' links");
+		Check(Get_Component<SpeedComponent>(reader) == nullptr, "an object loses what it read from a deleted type");
+		Check(Get_Component<TagComponent>(reader)->Value == 3, "an object keeps its state when its type is deleted");
+		Check(Get_Component<SpeedComponent>(copied)->Value == 11, "an object keeps its copy when its type is deleted");
+	}
+
+	/*
+	 * A save holds what each entity owns: a type's data with the type, an object's copy with
+	 * the object. A load restores the links once the type pointers are patched.
+	 */
+	{
+		TestObjectClass type;
+		Add_Component<SpeedComponent>(type).Value = 6;
+
+		TestObjectClass reader(&type);
+		TestObjectClass stateful(&type);
+		Add_Component<TagComponent>(stateful).Value = 2;
+		TestObjectClass copied(&type);
+		Add_Component<SpeedComponent>(copied).Value = 9;
+
+		Check(Save({&reader}).size() == bare, "an object without an entity saves nothing of its type's");
+		std::size_t const tagonly = bare + sizeof(unsigned short) + 3 + sizeof(int) + sizeof(int);
+		Check(Save({&stateful}).size() == tagonly, "an object saves only the components it owns");
+
+		std::vector<unsigned char> buffer = Save({&type, &reader, &stateful, &copied});
+
+		TestObjectClass newtype;
+		TestObjectClass newreader(&newtype);
+		TestObjectClass newstateful(&newtype);
+		TestObjectClass newcopied(&newtype);
+		Check(Load(buffer, {&newtype, &newreader, &newstateful, &newcopied}), "types and objects load whole");
+
+		Check(newreader.Entity == 0, "an object that saved nothing loads without an entity");
+		Check(Get_Component<SpeedComponent>(newreader)->Value == 6, "it reads the loaded type");
+		Check(flecs::entity(Component_World(), newstateful.Entity).target(flecs::IsA).id() == newtype.Entity, "a load links an object's entity to its type");
+		Check(Get_Component<SpeedComponent>(newstateful)->Value == 6, "a linked object reads the loaded type");
+		Check(Get_Own_Component<SpeedComponent>(newstateful) == nullptr, "a load copies nothing from the type");
+		Check(Get_Component<SpeedComponent>(newcopied)->Value == 9, "an object's copy comes back");
+
+		Get_Own_Component<SpeedComponent>(newtype)->Value = 1;
+		Check(Get_Component<SpeedComponent>(newstateful)->Value == 1, "a loaded object follows its type");
+		Check(Get_Component<SpeedComponent>(newcopied)->Value == 9, "a loaded copy does not follow its type");
+	}
+
+	/*
+	 * A load that fails leaves no link behind to be made later.
+	 */
+	{
+		TestObjectClass source;
+		Add_Component<TagComponent>(source).Value = 1;
+		std::vector<unsigned char> buffer = Save({&source});
+
+		TestObjectClass type;
+		Add_Component<SpeedComponent>(type).Value = 6;
+		TestObjectClass abandoned(&type);
+		std::vector<unsigned char> copy = buffer;
+		copy.resize(copy.size() - 1);
+		Check(!Load(copy, {&abandoned}), "a truncated record fails the load");
+		Resolve_Component_Refs();
+		Check(abandoned.Entity == 0 || !flecs::entity(Component_World(), abandoned.Entity).target(flecs::IsA), "a failed load makes no link");
+	}
+
+	/*
+	 * What an object reads from its type stays out of the object's checksum, and its own
+	 * copy goes in.
+	 */
+	{
+		TestObjectClass type;
+		Add_Component<SpeedComponent>(type).Value = 6;
+
+		TestObjectClass plain;
+		Add_Component<TagComponent>(plain).Value = 2;
+		TestObjectClass linked(&type);
+		Add_Component<TagComponent>(linked).Value = 2;
+		Check(Checksum(plain) == Checksum(linked), "an object's checksum leaves out what it reads from its type");
+
+		int const before = Checksum(type);
+		Get_Own_Component<SpeedComponent>(type)->Value = 7;
+		Check(Checksum(type) != before, "a type's checksum covers its component");
+
+		int const unchanged = Checksum(linked);
+		Add_Component<SpeedComponent>(linked);
+		Check(Checksum(linked) != unchanged, "an object's copy changes its checksum");
 	}
 
 	std::printf("\n%d failure(s)\n", Failures);

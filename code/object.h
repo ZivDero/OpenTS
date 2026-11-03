@@ -226,6 +226,7 @@ class ObjectClass : public AbstractClass
 		virtual TechnoTypeClass const * Techno_Type_Class(void) const;
 		__declspec( property( get=Techno_Type_Class) ) TechnoTypeClass const * TClass;
 		virtual ObjectTypeClass const * Class_Of(void) const {return(0);}
+		virtual AbstractClass * Component_Base(void) const override;
 		bool Is_Infantry(void) const {return(Fetch_RTTI() == RTTI_INFANTRY);}
 		bool Is_Foot(void) const;
 		virtual int Get_Ownable(void) const;

@@ -122,6 +122,7 @@
 #include "cell.h"
 #include "classids.h"
 #include "combat.h"
+#include "component.h"
 #include "conquer.h"
 #include "ctrlgroup.h"
 #include "draw.h"
@@ -2096,7 +2097,7 @@ void UnitClass::Per_Cell_Process(PCPType why)
 				UnitClass * unit = static_cast<UnitClass*>(NavCom);
 				if (unit->Class->IsSmallVisceroid) {
 					if (Center_Coord().As_Cell() == NavCom->Center_Coord().As_Cell()) {
-						unit->Class = const_cast<UnitTypeClass *>(Rule->LargeVisceroid);
+						unit->Change_Class(Rule->LargeVisceroid);
 						unit->Strength = unit->Class->MaxStrength;
 						Map[unit->LastAdjacencyCell].Adjust_Threat(unit->Owner(), unit->Risk());
 						Delete_Me();
@@ -5011,6 +5012,16 @@ BulletClass * UnitClass::Fire_At(AbstractClass * target, int which)
 ObjectTypeClass const * UnitClass::Class_Of(void) const
 {
 	return(Class);
+}
+
+
+/// <summary>
+/// Turns this unit into another type for good. The components it owns stay as they are.
+/// </summary>
+void UnitClass::Change_Class(UnitTypeClass const * type)
+{
+	Class = const_cast<UnitTypeClass *>(type);
+	Relink_Component_Type(*this);
 }
 
 
