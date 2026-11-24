@@ -14,6 +14,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -28,6 +29,7 @@ constexpr std::array BASE_NAMES{"IsA(BaseOne)", "IsA(BaseTwo)"};
 constexpr std::array EARLY_KEYS{10, 11, 12, 13};
 constexpr std::array REFILL_KEYS{14, 15, 16};
 constexpr std::array REPLAY_REFILL_KEYS{17, 18, 19};
+constexpr ecs_entity_t FIRST_ENGINE_ID = 1'000'000;
 
 struct Random {
 	uint32_t State;
@@ -61,9 +63,22 @@ struct SparseRow {
 	bool operator==(SparseRow const &) const = default;
 };
 
+struct EngineIds {
+	ecs_entity_t Next = 0;
+	bool Descending = false;
+};
+
+struct AllocatorState {
+	ecs_entity_t MaxId;
+	int32_t AliveCount;
+	std::vector<ecs_entity_t> Recyclable;
+};
+
 struct Snapshot {
 	std::vector<Table> Tables;
 	std::vector<SparseRow> Sparse;
+	EngineIds Engine;
+	AllocatorState Allocator{};
 };
 
 struct Batch {
@@ -88,9 +103,11 @@ struct NamedQuery {
 class World {
 	std::unique_ptr<ecs_world_t, decltype(&ecs_fini)> Handle{ecs_mini(), ecs_fini};
 	std::array<ecs_id_t, NAMES.size()> Ids{};
+	ecs_entity_range_t const * FlecsRange = nullptr;
+	ecs_entity_range_t const * EngineRange = nullptr;
 
 public:
-	World();
+	explicit World(EngineIds engine = {});
 	ecs_world_t * Get() const { return Handle.get(); }
 	ecs_id_t Id(Component component) const { return Ids[component]; }
 	int Key(ecs_entity_t entity) const;
@@ -99,16 +116,28 @@ public:
 	ecs_table_t * Find(std::vector<ecs_id_t> ids) const;
 	void Set(ecs_entity_t entity, Component component, int value) const;
 	void Remember(int key, ecs_entity_t entity);
-	ecs_entity_t Spawn(int key);
+	ecs_entity_t Spawn(int key, ecs_table_t * table = nullptr);
 	void Erase(int key);
+	Query Make_Query(ecs_query_cache_kind_t cache, std::initializer_list<ecs_term_t> terms,
+		ecs_flags32_t flags = 0) const;
+	ecs_entity_t const * Bulk_Init(ecs_bulk_desc_t const & desc) const;
 
+	EngineIds Engine;
 	std::map<int, ecs_entity_t> Entities;
 	std::vector<NamedQuery> Queries;
 };
 
 
-World::World()
+World::World(EngineIds engine) : Engine(engine)
 {
+	if (Engine.Next) {
+		FlecsRange = ecs_entity_range_new(Get(), 1, static_cast<uint32_t>(FIRST_ENGINE_ID - 1));
+		EngineRange = ecs_entity_range_new(Get(), static_cast<uint32_t>(FIRST_ENGINE_ID), 0);
+		REQUIRE(FlecsRange != nullptr);
+		REQUIRE(EngineRange != nullptr);
+		ecs_entity_range_set(Get(), FlecsRange);
+	}
+
 	for (std::size_t i = 0; i < NAMES.size(); ++i) {
 		ecs_entity_desc_t entity{};
 		entity.name = NAMES[i];
@@ -130,14 +159,8 @@ World::World()
 
 	auto query = [&](std::string_view name, ecs_query_cache_kind_t cache,
 		std::initializer_list<ecs_term_t> terms, ecs_flags32_t flags = 0) {
-		ecs_query_desc_t desc{};
-		desc.cache_kind = cache;
-		desc.flags = flags;
-		std::copy(terms.begin(), terms.end(), desc.terms);
-		Query handle{ecs_query_init(Get(), &desc), ecs_query_fini};
 		INFO(name);
-		REQUIRE(handle != nullptr);
-		Queries.push_back({name, std::move(handle)});
+		Queries.push_back({name, Make_Query(cache, terms, flags)});
 	};
 
 	// None bypasses the query cache, All requires every term to be cacheable,
@@ -153,6 +176,19 @@ World::World()
 	query("Scattered DontFragment (None)", EcsQueryCacheNone, {{Id(SPARSE)}});
 	query("Any including empty (None)", EcsQueryCacheNone, {{.id = EcsAny, .inout = EcsInOutNone}},
 		EcsQueryMatchEmptyTables | EcsQueryMatchPrefab | EcsQueryMatchDisabled);
+}
+
+
+Query World::Make_Query(ecs_query_cache_kind_t cache, std::initializer_list<ecs_term_t> terms,
+	ecs_flags32_t flags) const
+{
+	ecs_query_desc_t desc{};
+	desc.cache_kind = cache;
+	desc.flags = flags;
+	std::copy(terms.begin(), terms.end(), desc.terms);
+	Query handle{ecs_query_init(Get(), &desc), ecs_query_fini};
+	REQUIRE(handle != nullptr);
+	return handle;
 }
 
 
@@ -240,12 +276,39 @@ void World::Remember(int key, ecs_entity_t entity)
 }
 
 
-ecs_entity_t World::Spawn(int key)
+ecs_entity_t World::Spawn(int key, ecs_table_t * table)
 {
-	ecs_entity_t const entity = ecs_new_w_id(Get(), Id(KEY));
+	ecs_entity_t entity;
+	if (EngineRange) {
+		entity = Engine.Next;
+		REQUIRE(entity >= FIRST_ENGINE_ID);
+		Engine.Next = Engine.Descending ? entity - 1 : entity + 1;
+		// Explicit IDs advance the active range's cursor even when the ID is outside that range.
+		ecs_entity_range_set(Get(), EngineRange);
+		ecs_make_alive(Get(), entity);
+		ecs_entity_range_set(Get(), FlecsRange);
+		if (table) {
+			REQUIRE(ecs_commit(Get(), entity, nullptr, table, ecs_table_get_type(table), nullptr));
+		}
+	} else {
+		entity = table ? ecs_new_w_table(Get(), table) : ecs_new_w_id(Get(), Id(KEY));
+	}
 	Remember(key, entity);
 	Set(entity, KEY, key);
 	return entity;
+}
+
+
+ecs_entity_t const * World::Bulk_Init(ecs_bulk_desc_t const & desc) const
+{
+	if (EngineRange) {
+		ecs_entity_range_set(Get(), EngineRange);
+	}
+	ecs_entity_t const * result = ecs_bulk_init(Get(), &desc);
+	if (EngineRange) {
+		ecs_entity_range_set(Get(), FlecsRange);
+	}
+	return result;
 }
 
 
@@ -261,6 +324,22 @@ void Check_Line(std::string_view name, bool passed)
 	std::cout << (passed ? "PASS " : "FAIL ") << name << std::endl;
 	INFO(name);
 	CHECK(passed);
+}
+
+
+void Observe_Line(std::string_view name, bool same)
+{
+	std::cout << (same ? "SAME " : "DIFFERENT ") << name << '\n';
+}
+
+
+void Report_Check(std::string_view name, bool same, bool observation)
+{
+	if (observation) {
+		Observe_Line(name, same);
+	} else {
+		Check_Line(name, same);
+	}
 }
 
 
@@ -340,6 +419,7 @@ Visit Read_Query(World const & world, NamedQuery const & query)
 Snapshot Capture(World const & world)
 {
 	Snapshot result;
+	result.Engine = world.Engine;
 	for (int32_t i = 0; i < World_Table_Count(world.Get()); ++i) {
 		ecs_table_t * table = Table_In_World_Order(world.Get(), i);
 		Table saved{world.Type(table), {}};
@@ -406,7 +486,7 @@ void Append_Rows(World & world, ecs_table_t * table, std::vector<Row> const & ro
 	}
 	desc.data = data.data();
 	// The explicit-table branch uses ids to count data columns in 4.1.6.
-	REQUIRE(ecs_bulk_init(world.Get(), &desc) != nullptr);
+	REQUIRE(world.Bulk_Init(desc) != nullptr);
 	REQUIRE(ecs_table_count(table) == desc.count);
 	for (int32_t i = 0; i < desc.count; ++i) {
 		REQUIRE(ecs_table_entities(table)[i] == ids[i]);
@@ -476,6 +556,7 @@ void Restore(World & world, Snapshot const & snapshot)
 		after_tables - before == static_cast<int64_t>(tables.size()) &&
 		ecs_get_world_info(world.Get())->table_create_total == after_tables &&
 		sparse_stayed_in_place);
+	world.Engine = snapshot.Engine;
 }
 
 
@@ -623,9 +704,7 @@ void Build_History(World & world, int & next_key)
 {
 	ecs_table_t * prefab = world.Find({world.Id(KEY), world.Id(INHERITED), EcsPrefab});
 	for (int const key : BASE_KEYS) {
-		ecs_entity_t const entity = ecs_new_w_table(world.Get(), prefab);
-		world.Remember(key, entity);
-		world.Set(entity, KEY, key);
+		ecs_entity_t const entity = world.Spawn(key, prefab);
 		world.Set(entity, INHERITED, 9000 + key);
 	}
 
@@ -640,8 +719,13 @@ void Build_History(World & world, int & next_key)
 	Check_Line("A middle deletion swapped the last row into its slot",
 		Row_Keys(world, early) == std::vector<int>{10, 13, 12});
 	ecs_entity_t const recycled = world.Spawn(next_key++);
-	Check_Line("A reused a deleted entity index with another generation",
-		static_cast<uint32_t>(deleted) == static_cast<uint32_t>(recycled) && deleted != recycled);
+	if (world.Engine.Next) {
+		Check_Line("A engine creation uses a fresh index at generation zero",
+			ecs_strip_generation(deleted) != recycled && ecs_get_version(recycled) == 0);
+	} else {
+		Check_Line("A reused a deleted entity index with another generation",
+			static_cast<uint32_t>(deleted) == static_cast<uint32_t>(recycled) && deleted != recycled);
+	}
 
 	auto const & cached = Get_Query(world, "X (All)");
 	auto const & with_empty = Get_Query(world, "X including empty (All)");
@@ -713,10 +797,8 @@ void Further_Operations(World & a, World & b, int & next_key)
 		ecs_table_t * table = world->Find({world->Id(KEY), world->Id(X), world->Id(FRESH)});
 		Check_Line(world == &a ? "A replay starts a new table" : "B replay starts a new table",
 			ecs_get_world_info(world->Get())->table_create_total == previous + 1);
-		auto const entity = ecs_new_w_table(world->Get(), table);
-		world->Set(entity, KEY, fresh_key);
+		auto const entity = world->Spawn(fresh_key, table);
 		world->Set(entity, X, 4400);
-		world->Remember(fresh_key, entity);
 		bool const was_empty = ecs_table_count(early) == 0;
 		Fill_Early(*world, REPLAY_REFILL_KEYS);
 		Check_Line(world == &a ? "A replay refills the emptied table" : "B replay refills the emptied table",
@@ -729,11 +811,11 @@ void Further_Operations(World & a, World & b, int & next_key)
 		Apply(b, op);
 	}
 	auto const [left, right] = std::ranges::mismatch(a.Entities, b.Entities);
+	Observe_Line("Replay live simulation handles", left == a.Entities.end() && right == b.Entities.end());
 	if (left != a.Entities.end() && right != b.Entities.end() && left->first == right->first) {
-		std::cout << "Replay first different live handle at key " << left->first
+		std::cout << "Replay first different live handle at position " << std::distance(a.Entities.begin(), left) + 1
+			<< ", key " << left->first
 			<< " A=" << left->second << " B=" << right->second << '\n';
-	} else if (left == a.Entities.end() && right == b.Entities.end()) {
-		std::cout << "Replay live handles matched\n";
 	}
 }
 
@@ -746,6 +828,15 @@ std::vector<Batch> Table_List(Snapshot const & snapshot)
 		result.push_back({table.Type, count, count});
 	}
 	return result;
+}
+
+
+std::vector<Batch> Batches_By_Membership(std::vector<Batch> batches)
+{
+	for (Batch & batch : batches) {
+		std::ranges::sort(batch.Type);
+	}
+	return batches;
 }
 
 
@@ -763,11 +854,12 @@ auto Keyed_Values(Snapshot const & snapshot)
 }
 
 
-void Compare_Storage(std::string const & phase, Snapshot a, Snapshot b, bool compare_ids)
+void Compare_Storage(std::string const & phase, Snapshot a, Snapshot b, bool compare_ids,
+	bool observation = false)
 {
 	auto const a_tables = Table_List(a);
 	auto const b_tables = Table_List(b);
-	Check_Line(phase + " full table order and row counts", a_tables == b_tables);
+	Report_Check(phase + " full table order and row counts", a_tables == b_tables, observation);
 	Print_First_Difference("world table", a_tables, b_tables);
 
 	if (!compare_ids) {
@@ -781,8 +873,8 @@ void Compare_Storage(std::string const & phase, Snapshot a, Snapshot b, bool com
 			}
 		}
 	}
-	Check_Line(phase + (compare_ids ? " row order, owned values and live IDs" : " row order and owned values"),
-		a.Tables == b.Tables);
+	Report_Check(phase + (compare_ids ? " row order, owned values and live IDs" : " row order and owned values"),
+		a.Tables == b.Tables, observation);
 	for (std::size_t i = 0; i < std::min(a.Tables.size(), b.Tables.size()); ++i) {
 		if (a.Tables[i].Type == b.Tables[i].Type && a.Tables[i].Rows != b.Tables[i].Rows) {
 			std::cout << "  world table " << i + 1 << ' ' << a.Tables[i].Type << '\n';
@@ -790,7 +882,7 @@ void Compare_Storage(std::string const & phase, Snapshot a, Snapshot b, bool com
 			break;
 		}
 	}
-	Check_Line(phase + " DontFragment dense storage order and values", a.Sparse == b.Sparse);
+	Report_Check(phase + " DontFragment dense storage order and values", a.Sparse == b.Sparse, observation);
 	Print_First_Difference("sparse storage", a.Sparse, b.Sparse);
 }
 
@@ -805,27 +897,127 @@ std::vector<Visit> Read_Queries(World const & world)
 }
 
 
+bool Compare_Visit(std::string const & name, Visit const & a, Visit const & b, bool observation,
+	char right_world = 'B')
+{
+	bool const same = a.Keys == b.Keys && a.Batches == b.Batches;
+	Report_Check(name, same, observation);
+	Print_First_Difference("key", a.Keys, b.Keys, right_world);
+	Print_First_Difference("batch", a.Batches, b.Batches, right_world);
+	if (observation && !same) {
+		Observe_Line(name + " keyed visitation order", a.Keys == b.Keys);
+		auto const a_membership = Batches_By_Membership(a.Batches);
+		auto const b_membership = Batches_By_Membership(b.Batches);
+		Observe_Line(name + " batch order by table membership", a_membership == b_membership);
+		Print_First_Difference("batch membership", a_membership, b_membership, right_world);
+	}
+	return same;
+}
+
+
+enum class Comparison { ASSERT, OBSERVE, CONTROL };
+
 void Compare_Queries(std::string const & phase, World const & world, std::vector<Visit> const & expected,
-	World const & candidate, bool control = false)
+	World const & candidate, Comparison comparison = Comparison::ASSERT)
 {
 	bool any_difference = false;
 	for (std::size_t i = 0; i < expected.size(); ++i) {
-		Visit const & a = expected[i];
-		Visit const b = Read_Query(candidate, candidate.Queries[i]);
-		bool const same = a.Keys == b.Keys && a.Batches == b.Batches;
 		std::string const name = phase + " " + std::string{world.Queries[i].Name};
-		if (control) {
-			std::cout << (same ? "SAME " : "DIFFERENT ") << name << '\n';
-			any_difference |= !same;
-		} else {
-			Check_Line(name, same);
-		}
-		Print_First_Difference("key", a.Keys, b.Keys, control ? 'C' : 'B');
-		Print_First_Difference("batch", a.Batches, b.Batches, control ? 'C' : 'B');
+		any_difference |= !Compare_Visit(name, expected[i], Read_Query(candidate, candidate.Queries[i]),
+			comparison != Comparison::ASSERT, comparison == Comparison::CONTROL ? 'C' : 'B');
 	}
-	if (control) {
+	if (comparison == Comparison::CONTROL) {
 		Check_Line("C differs from A in at least one query", any_difference);
 	}
+}
+
+
+AllocatorState Capture_Allocator(World const & world)
+{
+	ecs_entities_t const ids = ecs_get_entities(world.Get());
+	// In 4.1.6 the first recyclable ID is at alive_count; the public example skips that entry.
+	return {ecs_get_max_id(world.Get()), ids.alive_count, {ids.ids + ids.alive_count, ids.ids + ids.count}};
+}
+
+
+void Compare_Allocator(std::string const & phase, AllocatorState const & a, AllocatorState const & b)
+{
+	std::cout << phase << " max A=" << a.MaxId << " B=" << b.MaxId
+		<< ", alive A=" << a.AliveCount << " B=" << b.AliveCount
+		<< ", recyclable A=" << a.Recyclable.size() << " B=" << b.Recyclable.size() << '\n';
+	Check_Line(phase + " allocation cursor and alive count", a.MaxId == b.MaxId && a.AliveCount == b.AliveCount);
+	Check_Line(phase + " recyclable IDs and generations in allocation order", a.Recyclable == b.Recyclable);
+	Print_First_Difference("recyclable ID", a.Recyclable, b.Recyclable);
+}
+
+
+void Compare_Live_Ids(std::string const & phase, World const & a, World const & b)
+{
+	auto const [left, right] = std::ranges::mismatch(a.Entities, b.Entities);
+	Check_Line(phase + " live simulation handles by key", left == a.Entities.end() && right == b.Entities.end());
+	if (left != a.Entities.end() || right != b.Entities.end()) {
+		std::cout << "  live simulation handle position " << std::distance(a.Entities.begin(), left) + 1;
+		for (auto const & [world, it, label] : {std::tuple{&a, left, 'A'}, std::tuple{&b, right, 'B'}}) {
+			std::cout << ' ' << label << '=';
+			if (it == world->Entities.end()) {
+				std::cout << "<end>";
+			} else {
+				std::cout << "key " << it->first << " ID " << it->second;
+			}
+		}
+		std::cout << '\n';
+	}
+	if (a.Entities.contains(19) && b.Entities.contains(19)) {
+		std::cout << "  key 19 A=" << a.Entities.at(19) << " B=" << b.Entities.at(19) << '\n';
+	}
+
+	auto sorted_ids = [](World const & world) {
+		ecs_entities_t const ids = ecs_get_entities(world.Get());
+		std::vector<ecs_entity_t> result(ids.ids, ids.ids + ids.alive_count);
+		std::ranges::sort(result);
+		return result;
+	};
+	auto const a_ids = sorted_ids(a);
+	auto const b_ids = sorted_ids(b);
+	Check_Line(phase + " all live world handles", a_ids == b_ids);
+	Print_First_Difference("sorted live ID", a_ids, b_ids);
+}
+
+
+Signature Data_Columns(World const & world, ecs_table_t * table)
+{
+	Signature const type = world.Type(table);
+	Signature columns;
+	for (int32_t i = 0; i < ecs_table_column_count(table); ++i) {
+		columns.push_back(type[ecs_table_column_to_type_index(table, i)]);
+	}
+	return columns;
+}
+
+
+void Add_Dual_Base_Instance(World & world, int key)
+{
+	ecs_entity_t const entity = world.Spawn(key);
+	world.Set(entity, X, 1);
+	for (int base_key : BASE_KEYS) {
+		ecs_add_pair(world.Get(), entity, EcsIsA, world.Entities.at(base_key));
+	}
+}
+
+
+Signature Read_IsA_Matches(World const & world)
+{
+	// Flecs 4.1.6 rejects CacheAll for the transitive IsA wildcard term.
+	Query query = world.Make_Query(EcsQueryCacheNone, {{ecs_pair(EcsIsA, EcsWildcard)}});
+	Signature matches;
+	ecs_iter_t it = ecs_query_iter(world.Get(), query.get());
+	while (ecs_query_next(&it)) {
+		int const base = world.Key(ecs_pair_second(world.Get(), ecs_field_id(&it, 0)));
+		for (int32_t i = 0; i < it.count; ++i) {
+			matches.push_back(std::to_string(world.Key(it.entities[i])) + "->" + std::to_string(base));
+		}
+	}
+	return matches;
 }
 
 } // namespace
@@ -882,7 +1074,7 @@ TEST_CASE("snapshot and replay preserve flecs table and query order")
 	auto const c_tables = Table_List(control);
 	std::cout << (a_tables == c_tables ? "SAME " : "DIFFERENT ") << "C full table order and row counts\n";
 	Print_First_Difference("world table", a_tables, c_tables, 'C');
-	Compare_Queries("C control", a, queries, c, true);
+	Compare_Queries("C control", a, queries, c, Comparison::CONTROL);
 
 	Further_Operations(a, b, next_key);
 	Compare_Storage("After further operations", Capture(a), Capture(b), false);
@@ -890,5 +1082,255 @@ TEST_CASE("snapshot and replay preserve flecs table and query order")
 	Check_Line("A and B retained all tables after registration",
 		ecs_get_world_info(a.Get())->table_delete_total == a_deleted_tables &&
 		ecs_get_world_info(b.Get())->table_delete_total == b_deleted_tables);
+}
+
+
+TEST_CASE("engine-chosen ids preserve handles and order after rebuild and replay")
+{
+	std::cout << "Engine-chosen IDs: rebuild and replay\n";
+	World a({FIRST_ENGINE_ID});
+	int next_key = FIRST_RANDOM_KEY;
+	Build_History(a, next_key);
+	Snapshot const snapshot = Capture(a);
+	World b({FIRST_ENGINE_ID});
+	Restore(b, snapshot);
+	std::cout << "Saved next engine ID=" << snapshot.Engine.Next << " rebuilt=" << b.Engine.Next << '\n';
+	Check_Line("Engine rebuild restored the next caller ID", snapshot.Engine.Next == b.Engine.Next);
+	Compare_Storage("Engine rebuild", snapshot, Capture(b), true);
+	Compare_Queries("Engine rebuild", a, Read_Queries(a), b);
+	Compare_Live_Ids("Engine rebuild", a, b);
+
+	{
+		NamedQuery const late_a{"Late X (All)", a.Make_Query(EcsQueryCacheAll, {{a.Id(X)}})};
+		NamedQuery const late_b{"Late X (All)", b.Make_Query(EcsQueryCacheAll, {{b.Id(X)}})};
+		Visit const visit_a = Read_Query(a, late_a);
+		std::cout << "Late X (All) A visits " << visit_a.Keys.size() << " keyed rows in "
+			<< visit_a.Batches.size() << " batches\n";
+		Check_Line("Late X (All) has matches and is cached in both worlds", !visit_a.Keys.empty() &&
+			late_a.Handle->cache_kind == EcsQueryCacheAll && late_b.Handle->cache_kind == EcsQueryCacheAll);
+		Compare_Visit("Late X (All) after history and rebuild", visit_a, Read_Query(b, late_b), false);
+		Compare_Visit("Late versus early X (All) in A", visit_a, Read_Query(a, Get_Query(a, "X (All)")), true, 'A');
+	}
+
+	Further_Operations(a, b, next_key);
+	Compare_Storage("Engine replay", Capture(a), Capture(b), true);
+	Compare_Queries("Engine replay", a, Read_Queries(a), b);
+	Compare_Live_Ids("Engine replay", a, b);
+	std::cout << "Replay next engine ID A=" << a.Engine.Next << " B=" << b.Engine.Next << '\n';
+	Check_Line("Engine replay advances both caller counters equally", a.Engine.Next == b.Engine.Next);
+}
+
+
+TEST_CASE("engine-chosen ids coexist with flecs allocation and expose generation rules")
+{
+	std::cout << "Engine-chosen IDs: allocation and generation\n";
+	constexpr int entity_count = 128;
+	constexpr ecs_entity_t far_id = 5'000'000;
+	constexpr ecs_entity_t last_id = FIRST_ENGINE_ID + entity_count - 1;
+	World unrestricted;
+	auto * world = unrestricted.Get();
+	constexpr ecs_entity_t explicit_version = FIRST_ENGINE_ID | (ecs_entity_t{7} << 32);
+	auto const baseline = ecs_new(world);
+	ecs_make_alive(world, explicit_version);
+	for (ecs_entity_t id = FIRST_ENGINE_ID + 1; id <= last_id; ++id) {
+		ecs_make_alive(world, id);
+	}
+	auto const high_cursor = ecs_get_max_id(world);
+	bool const next_caller_id_was_free = !ecs_is_alive(world, last_id + 1);
+	auto const next = ecs_new(world);
+	std::cout << "Unrestricted ecs_new baseline=" << baseline << " cursor=" << high_cursor
+		<< " next=" << next << '\n';
+	Check_Line("Unrestricted ecs_new jumps past the live engine IDs into the caller's interval",
+		high_cursor == last_id && next_caller_id_was_free && next == last_id + 1 &&
+		ecs_is_alive(world, next) && ecs_is_alive(world, last_id));
+	std::cout << "Make alive requested generation=7 handle=" << explicit_version
+		<< " live=" << ecs_get_alive(world, FIRST_ENGINE_ID) << '\n';
+	Check_Line("Make alive uses the requested generation for a never-used index",
+		ecs_is_alive(world, explicit_version) && ecs_get_alive(world, FIRST_ENGINE_ID) == explicit_version);
+	ecs_make_alive(world, far_id);
+	auto const far_cursor = ecs_get_max_id(world);
+	auto const after_far = ecs_new(world);
+	std::cout << "Unrestricted far ID=" << far_id << " cursor=" << far_cursor << " next=" << after_far << '\n';
+	Check_Line("Unrestricted far ID raises the cursor and ecs_new takes cursor plus one",
+		ecs_is_alive(world, far_id) && far_cursor == far_id && after_far == far_id + 1);
+
+	ecs_delete(world, last_id);
+	ecs_entity_t const bumped = last_id | (ecs_entity_t{1} << 32);
+	Check_Line("Previously deleted index is known and its original handle is dead",
+		ecs_exists(world, last_id) && !ecs_is_alive(world, last_id));
+	auto const ids = ecs_get_entities(world);
+	auto const dead = std::find(ids.ids + ids.alive_count, ids.ids + ids.count, bumped);
+	Check_Line("Deletion stores the bumped generation in the recyclable suffix", dead != ids.ids + ids.count);
+	ecs_make_alive(world, last_id);
+	std::cout << "Make alive again requested=" << last_id << " deleted entry=" << bumped
+		<< " revived=" << ecs_get_alive(world, last_id) << '\n';
+	Check_Line("Make alive revives a deleted index at the requested old generation",
+		ecs_is_alive(world, last_id) && !ecs_is_alive(world, bumped));
+
+	World bounded;
+	auto * bounded_world = bounded.Get();
+	auto const * low = ecs_entity_range_new(bounded_world, 1, static_cast<uint32_t>(FIRST_ENGINE_ID - 1));
+	REQUIRE(low != nullptr);
+	ecs_make_alive(bounded_world, far_id);
+	std::cout << "Low range remained active after direct make alive, upper bound=" << FIRST_ENGINE_ID - 1
+		<< " cursor=" << ecs_get_max_id(bounded_world) << '\n';
+	Check_Line("Making a far ID alive while the low range is active advances its cursor past the bound",
+		ecs_entity_range_get(bounded_world) == low && ecs_get_max_id(bounded_world) == far_id);
+
+	World ranged({FIRST_ENGINE_ID});
+	for (int i = 1; i <= entity_count; ++i) {
+		ranged.Spawn(i);
+	}
+	auto * ranged_world = ranged.Get();
+	auto const stale = ranged.Entities.at(entity_count);
+	ranged.Erase(entity_count);
+	Check_Line("Deleting an engine ID leaves its handle dead", !ecs_is_alive(ranged_world, stale));
+	auto const fresh = ranged.Spawn(entity_count + 1);
+	std::cout << "Engine stale=" << stale << " fresh=" << fresh << " generation=" << ecs_get_version(fresh) << '\n';
+	Check_Line("A fresh engine ID has generation zero and the stale handle stays dead",
+		stale == last_id && fresh == last_id + 1 && ecs_get_version(fresh) == 0 &&
+		ecs_is_alive(ranged_world, fresh) && !ecs_is_alive(ranged_world, stale));
+	auto const low_cursor = ecs_get_max_id(ranged_world);
+	std::vector<ecs_entity_t> issued;
+	for (int i = 0; i < 8; ++i) {
+		issued.push_back(ecs_new(ranged_world));
+	}
+	ecs_component_desc_t desc{};
+	desc.type.size = sizeof(int);
+	desc.type.alignment = alignof(int);
+	auto const component = ecs_component_init(ranged_world, &desc);
+	Query const query = ranged.Make_Query(EcsQueryCacheAll, {{ranged.Id(KEY)}});
+	auto const in_low_range = [](ecs_entity_t id) { return id && ecs_strip_generation(id) < FIRST_ENGINE_ID; };
+	std::cout << "Switched ranges: low cursor=" << low_cursor << " plain ecs_new first=" << issued.front()
+		<< " last=" << issued.back() << " component=" << component << " cached query=" << query->entity << '\n';
+	Check_Line("Switched ranges keep plain, component and cached-query IDs below caller IDs",
+		issued.front() == low_cursor + 1 && std::ranges::all_of(issued, in_low_range) &&
+		in_low_range(component) && in_low_range(query->entity));
+	Check_Line("Flecs allocation leaves the deleted engine handle dead", !ecs_is_alive(ranged_world, stale) &&
+		!ecs_is_alive(ranged_world, stale | (ecs_entity_t{1} << 32)));
+	ecs_delete(ranged_world, issued.back());
+	ranged.Spawn(entity_count + 2);
+	auto const low_recycled = ecs_new(ranged_world);
+	std::cout << "Low range recycled=" << low_recycled << " from=" << issued.back() << '\n';
+	Check_Line("The low range retains its recycled handle across an engine birth",
+		ecs_strip_generation(low_recycled) == issued.back() && ecs_get_version(low_recycled) == 1);
+}
+
+
+TEST_CASE("engine-chosen id values can affect IsA ordering")
+{
+	std::cout << "Engine-chosen IDs: numeric order experiments\n";
+	World a({FIRST_ENGINE_ID});
+	int next_key = FIRST_RANDOM_KEY;
+	Build_History(a, next_key);
+	auto const snapshot = Capture(a);
+	auto const queries = Read_Queries(a);
+	constexpr int dual_key = 24;
+	Add_Dual_Base_Instance(a, dual_key);
+	ecs_query_desc_t desc{};
+	desc.cache_kind = EcsQueryCacheAll;
+	desc.terms[0].id = ecs_pair(EcsIsA, EcsWildcard);
+	Query const rejected{ecs_query_init(a.Get(), &desc), ecs_query_fini};
+	Check_Line("CacheAll rejects the transitive (IsA, *) query", !rejected);
+
+	for (bool descending : {false, true}) {
+		std::string const phase = descending ? "Descending from 5000000" : "Ascending from 5000000";
+		std::cout << phase << " versus ascending from 1000000\n";
+		World b({5'000'000, descending});
+		int b_next_key = FIRST_RANDOM_KEY;
+		Build_History(b, b_next_key);
+		Compare_Storage(phase + " history", snapshot, Capture(b), false, true);
+		Compare_Queries(phase + " history", a, queries, b, Comparison::OBSERVE);
+		Add_Dual_Base_Instance(b, dual_key);
+
+		auto const a_tables = Batches_By_Membership(Table_List(Capture(a)));
+		auto const b_tables = Batches_By_Membership(Table_List(Capture(b)));
+		Observe_Line(phase + " dual IsA table creation order by membership", a_tables == b_tables);
+		Print_First_Difference("table", a_tables, b_tables);
+		auto * a_table = ecs_get_table(a.Get(), a.Entities.at(dual_key));
+		auto * b_table = ecs_get_table(b.Get(), b.Entities.at(dual_key));
+		auto const a_type = a.Type(a_table);
+		auto const b_type = b.Type(b_table);
+		auto const a_columns = Data_Columns(a, a_table);
+		auto const b_columns = Data_Columns(b, b_table);
+		std::cout << "  prefab IDs A=" << a.Entities.at(1) << ',' << a.Entities.at(2)
+			<< " B=" << b.Entities.at(1) << ',' << b.Entities.at(2) << '\n'
+			<< "  dual IsA type A=" << a_type << " B=" << b_type << '\n'
+			<< "  dual IsA data columns A=" << a_columns << " B=" << b_columns << '\n';
+		Observe_Line(phase + " dual IsA type order", a_type == b_type);
+		Print_First_Difference("type ID", a_type, b_type);
+		Observe_Line(phase + " dual IsA data column order", a_columns == b_columns);
+		Print_First_Difference("data column", a_columns, b_columns);
+		Compare_Queries(phase + " dual IsA", a, Read_Queries(a), b, Comparison::OBSERVE);
+		auto const a_pairs = Read_IsA_Matches(a);
+		auto const b_pairs = Read_IsA_Matches(b);
+		std::cout << "  (IsA, *) matches by instance->target key A=" << a_pairs << " B=" << b_pairs << '\n';
+		Observe_Line(phase + " uncached (IsA, *) match order by instance and target keys", a_pairs == b_pairs);
+		Print_First_Difference("(IsA, *) match", a_pairs, b_pairs);
+		auto const inherited = [dual_key](World const & world) {
+			auto const * value = static_cast<int const *>(
+				ecs_get_id(world.Get(), world.Entities.at(dual_key), world.Id(INHERITED)));
+			REQUIRE(value != nullptr);
+			return *value;
+		};
+		int const a_value = inherited(a);
+		int const b_value = inherited(b);
+		Observe_Line(phase + " dual IsA inherited value for key 24", a_value == b_value);
+		std::cout << "  key 24 Inherited A=" << a_value << " B=" << b_value << '\n';
+	}
+}
+
+
+TEST_CASE("flecs-issued ids match after restoring the recyclable list")
+{
+	std::cout << "Flecs-issued IDs: restore recyclable list\n";
+	World a;
+	int next_key = FIRST_RANDOM_KEY;
+	Build_History(a, next_key);
+	Snapshot snapshot = Capture(a);
+	snapshot.Allocator = Capture_Allocator(a);
+	World b;
+	Restore(b, snapshot);
+	auto const before = Capture_Allocator(b);
+	auto const & saved = snapshot.Allocator;
+	std::cout << "Allocator before restore max A=" << saved.MaxId << " B=" << before.MaxId
+		<< ", alive A=" << saved.AliveCount << " B=" << before.AliveCount
+		<< ", recyclable A=" << saved.Recyclable.size() << " B=" << before.Recyclable.size() << '\n';
+	Check_Line("Snapshot includes recycled handles with their bumped generations", !saved.Recyclable.empty() &&
+		std::ranges::all_of(saved.Recyclable, [](ecs_entity_t id) { return ecs_get_version(id) != 0; }));
+	bool const restored = Restore_Recyclable_Ids(b.Get(), saved.MaxId, saved.AliveCount,
+		saved.Recyclable.data(), static_cast<int32_t>(saved.Recyclable.size()));
+	Check_Line("Restore accepts the rebuilt index and installs the saved recyclable suffix", restored);
+	if (!restored) {
+		return;
+	}
+	Compare_Allocator("Allocator after restore", saved, Capture_Allocator(b));
+	Compare_Storage("Flecs rebuild", snapshot, Capture(b), true);
+	Compare_Queries("Flecs rebuild", a, Read_Queries(a), b);
+	Compare_Live_Ids("Flecs rebuild", a, b);
+
+	Further_Operations(a, b, next_key);
+	Compare_Storage("Flecs replay", Capture(a), Capture(b), true);
+	Compare_Queries("Flecs replay", a, Read_Queries(a), b);
+	Compare_Live_Ids("Flecs replay", a, b);
+	auto const after = Capture_Allocator(a);
+	Compare_Allocator("Allocator after replay", after, Capture_Allocator(b));
+
+	std::vector<ecs_entity_t> a_issued;
+	std::vector<ecs_entity_t> b_issued;
+	for (std::size_t i = 0; i < after.Recyclable.size() + 2; ++i) {
+		a_issued.push_back(ecs_new(a.Get()));
+		b_issued.push_back(ecs_new(b.Get()));
+	}
+	auto expected = after.Recyclable;
+	expected.push_back(after.MaxId + 1);
+	expected.push_back(after.MaxId + 2);
+	std::cout << "First post-replay allocation A=" << a_issued.front() << " B=" << b_issued.front()
+		<< "; first fresh index A=" << a_issued[after.Recyclable.size()]
+		<< " B=" << b_issued[after.Recyclable.size()] << '\n';
+	Check_Line("Post-replay ecs_new issues the saved suffix and then two fresh indices", a_issued == expected);
+	Print_First_Difference("post-replay ID against expected", expected, a_issued, 'A');
+	Check_Line("Post-replay ecs_new agrees through recycling and fresh allocation", a_issued == b_issued);
+	Print_First_Difference("post-replay allocation", a_issued, b_issued);
 }
 
